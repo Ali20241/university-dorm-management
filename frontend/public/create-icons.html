@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Create Icons</title>
+</head>
+<body>
+  <canvas id="canvas16" width="16" height="16"></canvas>
+  <canvas id="canvas32" width="32" height="32"></canvas>
+  <canvas id="canvas180" width="180" height="180"></canvas>
+  <canvas id="canvas192" width="192" height="192"></canvas>
+  <canvas id="canvas512" width="512" height="512"></canvas>
+  <script>
+    function drawIcon(canvas, size, bgColor, text) {
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${size * 0.5}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, size / 2, size / 2);
+      
+      // Download
+      const link = document.createElement('a');
+      link.download = `icon-${size}.png`;
+      link.href = canvas.toDataURL();
+      link.click();
+    }
+    
+    // Generate icons
+    setTimeout(() => {
+      drawIcon(document.getElementById('canvas16'), 16, '#5B5CE2', '🏛');
+      setTimeout(() => drawIcon(document.getElementById('canvas32'), 32, '#5B5CE2', '🏛'), 100);
+      setTimeout(() => drawIcon(document.getElementById('canvas180'), 180, '#5B5CE2', '🏛'), 200);
+      setTimeout(() => drawIcon(document.getElementById('canvas192'), 192, '#5B5CE2', '🏛'), 300);
+      setTimeout(() => drawIcon(document.getElementById('canvas512'), 512, '#5B5CE2', '🏛'), 400);
+    }, 500);
+  </script>
+  <p>Icons will download automatically...</p>
+</body>
+</html>

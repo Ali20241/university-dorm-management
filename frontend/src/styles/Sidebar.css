@@ -1,0 +1,260 @@
+/* Sidebar Styles - Flex Layout */
+.sidebar {
+  width: 260px;
+  background-color: #FFFFFF;
+  border-right: 1px solid #E5E7EB;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+  flex-shrink: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  height: calc(100vh - 60px);
+  position: sticky;
+  top: 60px;
+}
+
+/* Expanded State */
+.sidebar.expanded {
+  width: 260px;
+}
+
+/* Collapsed State */
+.sidebar.collapsed {
+  width: 70px;
+}
+
+/* Hide scrollbar for cleaner look */
+.sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+/* Sidebar Header */
+.sidebar-header {
+  padding: 20px 16px;
+  border-bottom: 1px solid #E5E7EB;
+  margin-bottom: 20px;
+  text-align: center;
+  transition: padding 0.3s ease;
+}
+
+.sidebar-logo {
+  font-size: 20px;
+  font-weight: 700;
+  color: #5B5CE2;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.sidebar-logo-small {
+  font-size: 24px;
+}
+
+/* Toggle Button */
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 20px;
+  right: -12px;
+  width: 24px;
+  height: 24px;
+  background: #5B5CE2;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  z-index: 100;
+  transition: all 0.2s ease;
+}
+
+.sidebar-toggle-btn:hover {
+  background: #4C4DD6;
+  transform: scale(1.05);
+}
+
+/* Sidebar Navigation */
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+/* Nav Link */
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  color: #6B7280;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.nav-link:hover {
+  background-color: #F3F4F6;
+  color: #5B5CE2;
+}
+
+.nav-link.active {
+  background-color: rgba(91, 92, 226, 0.1);
+  color: #5B5CE2;
+  font-weight: 600;
+}
+
+/* Icons */
+.nav-icon {
+  font-size: 20px;
+  min-width: 24px;
+  text-align: center;
+}
+
+.nav-label {
+  flex: 1;
+}
+
+/* Collapsed state */
+.sidebar.collapsed .nav-link {
+  justify-content: center;
+  padding: 12px;
+}
+
+.sidebar.collapsed .nav-label {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-header {
+  padding: 20px 0;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  padding: 20px 0;
+  display: flex;
+  justify-content: center;
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+  padding: 20px 16px;
+  border-top: 1px solid #E5E7EB;
+  margin-top: auto;
+  transition: padding 0.3s ease;
+}
+
+/* Mobile Menu Button */
+.mobile-menu-btn {
+  display: none;
+  position: fixed;
+  top: 70px;
+  left: 16px;
+  z-index: 1001;
+  background: #5B5CE2;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+/* Mobile Overlay */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 89;
+}
+
+/* Close Button for Mobile */
+.sidebar-close-btn {
+  display: none;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #6B7280;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: block;
+  }
+  
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    height: 100vh;
+    z-index: 1000;
+  }
+  
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  
+  .sidebar-toggle-btn {
+    display: none;
+  }
+  
+  .sidebar-close-btn {
+    display: block;
+  }
+  
+  .sidebar-overlay {
+    display: block;
+  }
+  /* Dark Mode Sidebar */
+.dark-mode .sidebar {
+  background-color: #0f172a !important;
+  border-right-color: #334155 !important;
+}
+
+.dark-mode .sidebar-logo {
+  color: #818cf8 !important;
+}
+
+.dark-mode .nav-link {
+  color: #94a3b8 !important;
+}
+
+.dark-mode .nav-link:hover {
+  background-color: #334155 !important;
+  color: #818cf8 !important;
+}
+
+.dark-mode .nav-link.active {
+  background-color: rgba(129, 140, 248, 0.2) !important;
+  color: #818cf8 !important;
+}
+
+.dark-mode .sidebar-footer {
+  border-top-color: #334155 !important;
+}
+}
