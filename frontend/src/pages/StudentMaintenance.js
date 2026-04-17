@@ -24,7 +24,7 @@ const StudentMaintenance = () => {
   const fetchRequests = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/student/maintenance', {
+      const response = await axios.get('http://localhost:5001/api/student/maintenance', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRequests(response.data.requests);
@@ -38,7 +38,7 @@ const StudentMaintenance = () => {
   const fetchRooms = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/rooms', {
+      const response = await axios.get('http://localhost:5001/api/rooms', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRooms(response.data.rooms);
@@ -51,7 +51,7 @@ const StudentMaintenance = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/api/student/maintenance', formData, {
+      await axios.post('http://localhost:5001/api/student/maintenance', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Maintenance request submitted!' });

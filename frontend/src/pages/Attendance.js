@@ -19,7 +19,7 @@ const Attendance = () => {
   const fetchAttendance = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`http://localhost:5000/api/admin/attendance?date=${selectedDate}`, {
+      const response = await axios.get(`http://localhost:5001/api/admin/attendance?date=${selectedDate}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAttendance(response.data.attendance);
@@ -31,7 +31,7 @@ const Attendance = () => {
   const fetchStudents = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/attendance/students', {
+      const response = await axios.get('http://localhost:5001/api/admin/attendance/students', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudents(response.data.students);
@@ -46,7 +46,7 @@ const Attendance = () => {
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/api/admin/attendance/mark', {
+      await axios.post('http://localhost:5001/api/admin/attendance/mark', {
         student_id: studentId,
         date: selectedDate,
         status: status

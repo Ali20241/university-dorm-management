@@ -61,7 +61,7 @@ const Navbar = () => {
   const fetchStudentProfile = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/student/profile/details', {
+      const response = await axios.get('http://localhost:5001/api/student/profile/details', {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
@@ -77,7 +77,7 @@ const Navbar = () => {
   const fetchAdminProfile = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/profile/details', {
+      const response = await axios.get('http://localhost:5001/api/admin/profile/details', {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
@@ -96,17 +96,17 @@ const Navbar = () => {
       const token = localStorage.getItem('token');
       
       // Get pending applications status
-      const applicationsRes = await axios.get('http://localhost:5000/api/student/applications', {
+      const applicationsRes = await axios.get('http://localhost:5001/api/student/applications', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       // Get maintenance requests
-      const maintenanceRes = await axios.get('http://localhost:5000/api/student/maintenance', {
+      const maintenanceRes = await axios.get('http://localhost:5001/api/student/maintenance', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       // Get penalties
-      const penaltiesRes = await axios.get('http://localhost:5000/api/student/penalties', {
+      const penaltiesRes = await axios.get('http://localhost:5001/api/student/penalties', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -204,13 +204,13 @@ const Navbar = () => {
       const token = localStorage.getItem('token');
       
       const [applicationsRes, maintenanceRes, penaltiesRes] = await Promise.all([
-        axios.get('http://localhost:5000/api/admin/applications', {
+        axios.get('http://localhost:5001/api/admin/applications', {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get('http://localhost:5000/api/admin/maintenance', {
+        axios.get('http://localhost:5001/api/admin/maintenance', {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get('http://localhost:5000/api/admin/penalties', {
+        axios.get('http://localhost:5001/api/admin/penalties', {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
@@ -371,7 +371,7 @@ const Navbar = () => {
             <div className="profile-circle" onClick={goToProfile}>
               {profileImage ? (
                 <img 
-                  src={`http://localhost:5000${profileImage}`} 
+                  src={`http://localhost:5001${profileImage}`} 
                   alt="Profile"
                   className="profile-avatar"
                 />
@@ -389,7 +389,7 @@ const Navbar = () => {
                 <div className="dropdown-header">
                   <div className="dropdown-avatar">
                     {profileImage ? (
-                      <img src={`http://localhost:5000${profileImage}`} alt="Profile" />
+                      <img src={`http://localhost:5001${profileImage}`} alt="Profile" />
                     ) : (
                       <span>{getInitials()}</span>
                     )}

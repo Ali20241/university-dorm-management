@@ -22,7 +22,7 @@ const MyAssignment = () => {
         return;
       }
       
-      const response = await axios.get('http://localhost:5000/api/student/assignment/details', {
+      const response = await axios.get('http://localhost:5001/api/student/assignment/details', {
         headers: { Authorization: `Bearer ${token}` }
       });
       

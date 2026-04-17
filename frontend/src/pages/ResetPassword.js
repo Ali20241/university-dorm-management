@@ -28,7 +28,7 @@ const ResetPassword = () => {
     setToken(resetToken);
     
     // Verify token
-    axios.post('http://localhost:5000/api/auth/verify-reset-token', { token: resetToken })
+    axios.post('http://localhost:5001/api/auth/verify-reset-token', { token: resetToken })
       .then(response => {
         setValidToken(true);
         setVerifying(false);
@@ -56,7 +56,7 @@ const ResetPassword = () => {
     setMessage(null);
     
     try {
-      await axios.post('http://localhost:5000/api/auth/reset-password', {
+      await axios.post('http://localhost:5001/api/auth/reset-password', {
         token,
         new_password: password
       });

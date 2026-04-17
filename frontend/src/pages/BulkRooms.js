@@ -25,7 +25,7 @@ const BulkRooms = () => {
     
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post('http://localhost:5000/api/admin/rooms/bulk', formData, {
+      const response = await axios.post('http://localhost:5001/api/admin/rooms/bulk', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

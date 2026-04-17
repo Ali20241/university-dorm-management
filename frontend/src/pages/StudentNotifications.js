@@ -16,7 +16,7 @@ const StudentNotifications = () => {
   const fetchPenalties = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/student/penalties', {
+      const response = await axios.get('http://localhost:5001/api/student/penalties', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPenalties(response.data.penalties);

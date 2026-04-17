@@ -27,7 +27,7 @@ const StudentProfile = () => {
   const fetchProfile = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/student/profile/details', {
+      const response = await axios.get('http://localhost:5001/api/student/profile/details', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setProfile(response.data.profile);
@@ -57,7 +57,7 @@ const StudentProfile = () => {
     setUploading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post('http://localhost:5000/api/student/upload-photo', formData, {
+      const response = await axios.post('http://localhost:5001/api/student/upload-photo', formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -80,7 +80,7 @@ const StudentProfile = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.put('http://localhost:5000/api/student/profile', formData, {
+      await axios.put('http://localhost:5001/api/student/profile', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
@@ -172,7 +172,7 @@ const StudentProfile = () => {
               }}>
                 {profile?.profile_image ? (
                   <img 
-                    src={`http://localhost:5000${profile.profile_image}`} 
+                    src={`http://localhost:5001${profile.profile_image}`} 
                     alt="Profile"
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />

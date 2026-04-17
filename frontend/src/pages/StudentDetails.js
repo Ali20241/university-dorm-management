@@ -25,16 +25,16 @@ const StudentDetails = () => {
     
     try {
       const [studentRes, paymentsRes, maintenanceRes, applicationsRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/admin/students/${id}/details`, {
+        axios.get(`http://localhost:5001/api/admin/students/${id}/details`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get(`http://localhost:5000/api/admin/students/${id}/payments`, {
+        axios.get(`http://localhost:5001/api/admin/students/${id}/payments`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get(`http://localhost:5000/api/admin/students/${id}/maintenance`, {
+        axios.get(`http://localhost:5001/api/admin/students/${id}/maintenance`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get(`http://localhost:5000/api/admin/students/${id}/applications`, {
+        axios.get(`http://localhost:5001/api/admin/students/${id}/applications`, {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
@@ -135,7 +135,7 @@ const StudentDetails = () => {
                   fontSize: '48px'
                 }}>
                   {student?.profile_image ? (
-                    <img src={`http://localhost:5000${student.profile_image}`} alt="Profile" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                    <img src={`http://localhost:5001${student.profile_image}`} alt="Profile" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
                   ) : (
                     '👤'
                   )}

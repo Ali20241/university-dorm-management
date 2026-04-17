@@ -33,7 +33,7 @@ const StudentDashboard = () => {
             
             // Fetch penalties
             const token = localStorage.getItem('token');
-            const penaltiesRes = await fetch('http://localhost:5000/api/student/penalties', {
+            const penaltiesRes = await fetch('http://localhost:5001/api/student/penalties', {
               headers: { Authorization: `Bearer ${token}` }
             });
             const penaltiesData = await penaltiesRes.json();

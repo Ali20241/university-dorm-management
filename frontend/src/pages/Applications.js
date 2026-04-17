@@ -15,7 +15,7 @@ const Applications = () => {
   const fetchApplications = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/applications', {
+      const response = await axios.get('http://localhost:5001/api/admin/applications', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setApplications(response.data.applications);
@@ -28,7 +28,7 @@ const Applications = () => {
 
   const handleApprove = async (id) => {
     const token = localStorage.getItem('token');
-    await axios.put(`http://localhost:5000/api/admin/applications/${id}/approve`, {}, {
+    await axios.put(`http://localhost:5001/api/admin/applications/${id}/approve`, {}, {
       headers: { Authorization: `Bearer ${token}` }
     });
     setMessage({ type: 'success', text: 'Application approved!' });
@@ -40,7 +40,7 @@ const Applications = () => {
     const reason = prompt('Reason for rejection:');
     if (reason) {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/admin/applications/${id}/reject`, { reason }, {
+      await axios.put(`http://localhost:5001/api/admin/applications/${id}/reject`, { reason }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Application rejected!' });

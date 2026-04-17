@@ -15,7 +15,7 @@ const StudentPayments = () => {
   const fetchPayments = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/student/payments', {
+      const response = await axios.get('http://localhost:5001/api/student/payments', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPayments(response.data.payments);

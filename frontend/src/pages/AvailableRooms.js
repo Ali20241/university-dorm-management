@@ -19,7 +19,7 @@ const AvailableRooms = () => {
   const fetchRooms = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/rooms', {
+      const response = await axios.get('http://localhost:5001/api/rooms', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRooms(response.data.rooms);
@@ -37,14 +37,14 @@ const AvailableRooms = () => {
     console.log('User from localStorage:', user);
     
     try {
-      const profileResponse = await axios.get('http://localhost:5000/api/student/profile', {
+      const profileResponse = await axios.get('http://localhost:5001/api/student/profile', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       const studentId = profileResponse.data.student.id;
       console.log('Student ID from profile:', studentId);
       
-      const response = await axios.post('http://localhost:5000/api/student/apply', 
+      const response = await axios.post('http://localhost:5001/api/student/apply', 
         { room_id: roomId, student_id: studentId },
         { headers: { Authorization: `Bearer ${token}` } }
       );

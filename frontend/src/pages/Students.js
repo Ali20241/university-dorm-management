@@ -35,7 +35,7 @@ const Students = () => {
   const fetchStudents = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/students', {
+      const response = await axios.get('http://localhost:5001/api/admin/students', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudents(response.data.students);
@@ -55,7 +55,7 @@ const Students = () => {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/api/auth/register', {
+      await axios.post('http://localhost:5001/api/auth/register', {
         email: formData.email,
         password: formData.password,
         firstName: formData.firstName,
@@ -84,7 +84,7 @@ const Students = () => {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:5000/api/admin/students/${studentToDelete.id}/delete`, {
+      await axios.delete(`http://localhost:5001/api/admin/students/${studentToDelete.id}/delete`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Student deleted successfully!' });
@@ -105,7 +105,7 @@ const Students = () => {
     }
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/admin/students/${selectedStudent.id}/change-password`, 
+      await axios.put(`http://localhost:5001/api/admin/students/${selectedStudent.id}/change-password`, 
         { new_password: newPassword },
         { headers: { Authorization: `Bearer ${token}` } }
       );

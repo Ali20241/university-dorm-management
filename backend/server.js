@@ -1,34 +1,30 @@
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+const XLSX = require('xlsx');
 require('dotenv').config();
 
-// Email Service
-const nodemailer = require('nodemailer');
+// Database connection - PostgreSQL
+const pool = require('./config/database');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// Database connection
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
-
-db.connect((err) => {
+// Test database connection
+pool.connect((err, client, release) => {
   if (err) {
     console.error('Database connection failed:', err.message);
   } else {
-    console.log('Database connected successfully');
+    console.log('✓ Database connected successfully');
+    release();
   }
 });
 
@@ -169,43 +165,47 @@ app.get('/api/health', (req, res) => {
 });
 
 // ========== ROOM ROUTES ==========
-app.get('/api/rooms', (req, res) => {
-  db.query('SELECT id, room_number, floor, building, room_type, capacity, current_occupancy, room_status, amenities, description, image_url, created_at, updated_at FROM rooms', (err, results) => {
-    if (err) {
-      res.status(500).json({ success: false, message: err.message });
-    } else {
-      res.json({ success: true, count: results.length, rooms: results });
-    }
-  });
+app.get('/api/rooms', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, room_number, floor, building, room_type, capacity, current_occupancy, room_status, amenities, description, image_url, created_at, updated_at FROM rooms');
+    res.json({ success: true, count: result.rows.length, rooms: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ========== AUTH ROUTES ==========
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   console.log('Login attempt for:', email);
+  
   if (!email || !password) {
     return res.status(400).json({ success: false, message: 'Email and password required' });
   }
-  db.query('SELECT * FROM users WHERE email = ?', [email], async (err, users) => {
-    if (err) {
-      console.log('Database error:', err);
-      return res.status(500).json({ success: false, message: 'Database error' });
-    }
+  
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const users = result.rows;
+    
     if (users.length === 0) {
       console.log('User not found:', email);
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
+    
     const user = users[0];
     const passwordMatch = await bcrypt.compare(password, user.password);
+    
     if (!passwordMatch) {
       console.log('Wrong password for:', email);
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
+    
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
+    
     console.log('Login successful:', email);
     res.json({ 
       success: true, 
@@ -213,127 +213,105 @@ app.post('/api/auth/login', (req, res) => {
       token, 
       user: { id: user.id, email: user.email, role: user.role } 
     });
-  });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
 
 // Student Registration
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, firstName, lastName, studentId, phone, major, year, gender } = req.body;
   console.log('Registration attempt:', email);
-  db.query('SELECT id FROM users WHERE email = ?', [email], async (err, results) => {
-    if (err) {
-      console.log('Database error:', err);
-      return res.status(500).json({ success: false, message: 'Database error' });
-    }
-    if (results.length > 0) {
-      console.log('Email already exists:', email);
+  
+  try {
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existingUser.rows.length > 0) {
       return res.status(400).json({ success: false, message: 'Email already registered' });
     }
-    try {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      db.query('INSERT INTO users (email, password, role) VALUES (?, ?, ?)',
-        [email, hashedPassword, 'student'],
-        (err, userResult) => {
-          if (err) {
-            console.log('User insert error:', err);
-            return res.status(500).json({ success: false, message: 'Failed to create user' });
-          }
-          db.query(
-            `INSERT INTO students (user_id, student_id, first_name, last_name, email, phone, major, year, gender, status) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
-            [userResult.insertId, studentId, firstName, lastName, email, phone || null, major || null, year || null, gender || null],
-            (err) => {
-              if (err) {
-                console.log('Student insert error:', err);
-                return res.status(500).json({ success: false, message: 'Failed to create student profile' });
-              }
-              const token = jwt.sign(
-                { id: userResult.insertId, email: email, role: 'student' },
-                process.env.JWT_SECRET,
-                { expiresIn: '7d' }
-              );
-              console.log('Registration successful:', email);
-              res.json({
-                success: true,
-                message: 'Registration successful',
-                token,
-                user: { id: userResult.insertId, email: email, role: 'student', firstName, lastName }
-              });
-            }
-          );
-        }
-      );
-    } catch (error) {
-      console.log('Registration error:', error);
-      res.status(500).json({ success: false, message: 'Server error' });
-    }
-  });
+    
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userResult = await pool.query(
+      'INSERT INTO users (email, password, role) VALUES ($1, $2, $3) RETURNING id',
+      [email, hashedPassword, 'student']
+    );
+    
+    await pool.query(
+      `INSERT INTO students (user_id, student_id, first_name, last_name, email, phone, major, year, gender, status) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')`,
+      [userResult.rows[0].id, studentId, firstName, lastName, email, phone || null, major || null, year || null, gender || null]
+    );
+    
+    const token = jwt.sign(
+      { id: userResult.rows[0].id, email: email, role: 'student' },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    
+    console.log('Registration successful:', email);
+    res.json({
+      success: true,
+      message: 'Registration successful',
+      token,
+      user: { id: userResult.rows[0].id, email: email, role: 'student', firstName, lastName }
+    });
+  } catch (error) {
+    console.log('Registration error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
 
 // ========== ADMIN ROUTES ==========
 
 // Admin Dashboard Statistics
-app.get('/api/admin/dashboard', (req, res) => {
-  const queries = {
-    totalStudents: 'SELECT COUNT(*) as count FROM students',
-    totalRooms: 'SELECT COUNT(*) as count FROM rooms',
-    availableRooms: "SELECT COUNT(*) as count FROM rooms WHERE room_status = 'available'",
-    pendingApplications: "SELECT COUNT(*) as count FROM applications WHERE status = 'pending'",
-    openMaintenance: "SELECT COUNT(*) as count FROM maintenance_requests WHERE status = 'open'"
-  };
-  db.query(queries.totalStudents, (err, students) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    db.query(queries.totalRooms, (err, rooms) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      db.query(queries.availableRooms, (err, available) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        db.query(queries.pendingApplications, (err, pending) => {
-          if (err) return res.status(500).json({ success: false, message: err.message });
-          db.query(queries.openMaintenance, (err, maintenance) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            res.json({
-              success: true,
-              statistics: {
-                totalStudents: students[0].count,
-                totalRooms: rooms[0].count,
-                availableRooms: available[0].count,
-                pendingApplications: pending[0].count,
-                openMaintenance: maintenance[0].count
-              }
-            });
-          });
-        });
-      });
+app.get('/api/admin/dashboard', async (req, res) => {
+  try {
+    const totalStudents = await pool.query('SELECT COUNT(*) as count FROM students');
+    const totalRooms = await pool.query('SELECT COUNT(*) as count FROM rooms');
+    const availableRooms = await pool.query("SELECT COUNT(*) as count FROM rooms WHERE room_status = 'available'");
+    const pendingApplications = await pool.query("SELECT COUNT(*) as count FROM applications WHERE status = 'pending'");
+    const openMaintenance = await pool.query("SELECT COUNT(*) as count FROM maintenance_requests WHERE status = 'open'");
+    
+    res.json({
+      success: true,
+      statistics: {
+        totalStudents: parseInt(totalStudents.rows[0].count),
+        totalRooms: parseInt(totalRooms.rows[0].count),
+        availableRooms: parseInt(availableRooms.rows[0].count),
+        pendingApplications: parseInt(pendingApplications.rows[0].count),
+        openMaintenance: parseInt(openMaintenance.rows[0].count)
+      }
     });
-  });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Get all students
-app.get('/api/admin/students', (req, res) => {
-  db.query('SELECT * FROM students', (err, results) => {
-    if (err) {
-      res.status(500).json({ success: false, message: err.message });
-    } else {
-      res.json({ success: true, count: results.length, students: results });
-    }
-  });
+app.get('/api/admin/students', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM students');
+    res.json({ success: true, count: result.rows.length, students: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Delete student
-app.delete('/api/admin/students/:id/delete', (req, res) => {
+app.delete('/api/admin/students/:id/delete', async (req, res) => {
   const { id } = req.params;
-  db.query('SELECT user_id FROM students WHERE id = ?', [id], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (results.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
-    const user_id = results[0].user_id;
-    db.query('DELETE FROM students WHERE id = ?', [id], (err) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      db.query('DELETE FROM users WHERE id = ?', [user_id], (err) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Student deleted successfully' });
-      });
-    });
-  });
+  try {
+    const studentResult = await pool.query('SELECT user_id FROM students WHERE id = $1', [id]);
+    if (studentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    const user_id = studentResult.rows[0].user_id;
+    await pool.query('DELETE FROM students WHERE id = $1', [id]);
+    await pool.query('DELETE FROM users WHERE id = $1', [user_id]);
+    res.json({ success: true, message: 'Student deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Admin - Change Student Password
@@ -345,609 +323,664 @@ app.put('/api/admin/students/:id/change-password', async (req, res) => {
   }
   try {
     const hashedPassword = await bcrypt.hash(new_password, 10);
-    db.query('SELECT user_id FROM students WHERE id = ?', [id], (err, studentResults) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (studentResults.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
-      const user_id = studentResults[0].user_id;
-      db.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, user_id], (err) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Password changed successfully' });
-      });
-    });
+    const studentResult = await pool.query('SELECT user_id FROM students WHERE id = $1', [id]);
+    if (studentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    const user_id = studentResult.rows[0].user_id;
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, user_id]);
+    res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // Get single student details
-app.get('/api/admin/students/:id/details', (req, res) => {
+app.get('/api/admin/students/:id/details', async (req, res) => {
   const { id } = req.params;
-  const query = `
-    SELECT s.*, u.email, 
-           r.room_number, r.building, r.floor, r.room_type,
-           ra.assignment_date, ra.status as assignment_status
-    FROM students s
-    JOIN users u ON s.user_id = u.id
-    LEFT JOIN room_assignments ra ON s.id = ra.student_id AND ra.status = 'active'
-    LEFT JOIN rooms r ON ra.room_id = r.id
-    WHERE s.id = ?
-  `;
-  db.query(query, [id], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (results.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
-    res.json({ success: true, student: results[0] });
-  });
+  try {
+    const query = `
+      SELECT s.*, u.email, 
+             r.room_number, r.building, r.floor, r.room_type,
+             ra.assignment_date, ra.status as assignment_status
+      FROM students s
+      JOIN users u ON s.user_id = u.id
+      LEFT JOIN room_assignments ra ON s.id = ra.student_id AND ra.status = 'active'
+      LEFT JOIN rooms r ON ra.room_id = r.id
+      WHERE s.id = $1
+    `;
+    const result = await pool.query(query, [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    res.json({ success: true, student: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Get student's payment history
-app.get('/api/admin/students/:id/payments', (req, res) => {
+app.get('/api/admin/students/:id/payments', async (req, res) => {
   const { id } = req.params;
-  db.query(`SELECT * FROM payments WHERE student_id = ? ORDER BY due_date DESC`, [id], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, payments: results });
-  });
+  try {
+    const result = await pool.query('SELECT * FROM payments WHERE student_id = $1 ORDER BY due_date DESC', [id]);
+    res.json({ success: true, payments: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Get student's maintenance requests
-app.get('/api/admin/students/:id/maintenance', (req, res) => {
+app.get('/api/admin/students/:id/maintenance', async (req, res) => {
   const { id } = req.params;
-  db.query(`SELECT mr.*, r.room_number FROM maintenance_requests mr JOIN rooms r ON mr.room_id = r.id WHERE mr.student_id = ? ORDER BY mr.created_at DESC`, [id], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, maintenance: results });
-  });
+  try {
+    const result = await pool.query(
+      `SELECT mr.*, r.room_number FROM maintenance_requests mr 
+       JOIN rooms r ON mr.room_id = r.id 
+       WHERE mr.student_id = $1 
+       ORDER BY mr.created_at DESC`,
+      [id]
+    );
+    res.json({ success: true, maintenance: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Get student's applications
-app.get('/api/admin/students/:id/applications', (req, res) => {
+app.get('/api/admin/students/:id/applications', async (req, res) => {
   const { id } = req.params;
-  db.query(`SELECT a.*, r.room_number, r.building, r.room_type FROM applications a JOIN rooms r ON a.room_id = r.id WHERE a.student_id = ? ORDER BY a.application_date DESC`, [id], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, applications: results });
-  });
+  try {
+    const result = await pool.query(
+      `SELECT a.*, r.room_number, r.building, r.room_type 
+       FROM applications a 
+       JOIN rooms r ON a.room_id = r.id 
+       WHERE a.student_id = $1 
+       ORDER BY a.application_date DESC`,
+      [id]
+    );
+    res.json({ success: true, applications: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ========== ROOM MANAGEMENT (ADMIN) ==========
-app.post('/api/admin/rooms', (req, res) => {
+app.post('/api/admin/rooms', async (req, res) => {
   const { room_number, floor, building, room_type, capacity, description } = req.body;
-  db.query(
-    'INSERT INTO rooms (room_number, floor, building, room_type, capacity, description) VALUES (?, ?, ?, ?, ?, ?)',
-    [room_number, floor, building, room_type, capacity, description],
-    (err, result) => {
-      if (err) {
-        res.status(500).json({ success: false, message: err.message });
-      } else {
-        res.json({ success: true, message: 'Room created', roomId: result.insertId });
-      }
-    }
-  );
+  try {
+    const result = await pool.query(
+      'INSERT INTO rooms (room_number, floor, building, room_type, capacity, description) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [room_number, floor, building, room_type, capacity, description]
+    );
+    res.json({ success: true, message: 'Room created', roomId: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.put('/api/admin/rooms/:id', (req, res) => {
+app.put('/api/admin/rooms/:id', async (req, res) => {
   const { id } = req.params;
   const { room_number, floor, building, room_type, capacity, room_status, description } = req.body;
-  db.query(
-    'UPDATE rooms SET room_number=?, floor=?, building=?, room_type=?, capacity=?, room_status=?, description=? WHERE id=?',
-    [room_number, floor, building, room_type, capacity, room_status, description, id],
-    (err) => {
-      if (err) {
-        res.status(500).json({ success: false, message: err.message });
-      } else {
-        res.json({ success: true, message: 'Room updated' });
-      }
-    }
-  );
+  try {
+    await pool.query(
+      'UPDATE rooms SET room_number=$1, floor=$2, building=$3, room_type=$4, capacity=$5, room_status=$6, description=$7 WHERE id=$8',
+      [room_number, floor, building, room_type, capacity, room_status, description, id]
+    );
+    res.json({ success: true, message: 'Room updated' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.delete('/api/admin/rooms/:id', (req, res) => {
+app.delete('/api/admin/rooms/:id', async (req, res) => {
   const { id } = req.params;
-  db.query('DELETE FROM rooms WHERE id = ?', [id], (err) => {
-    if (err) {
-      res.status(500).json({ success: false, message: err.message });
-    } else {
-      res.json({ success: true, message: 'Room deleted' });
-    }
-  });
+  try {
+    await pool.query('DELETE FROM rooms WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Room deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Bulk Create Rooms
-app.post('/api/admin/rooms/bulk', (req, res) => {
+app.post('/api/admin/rooms/bulk', async (req, res) => {
   const { blocks, floors_per_block, rooms_per_floor, capacity, room_type } = req.body;
-  let rooms = [];
-  let totalRooms = 0;
   const blockNames = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
   const blocksToUse = blocks === 'all' ? blockNames : blockNames.slice(0, parseInt(blocks));
-  for (const block of blocksToUse) {
-    for (let floor = 1; floor <= floors_per_block; floor++) {
-      for (let roomNum = 1; roomNum <= rooms_per_floor; roomNum++) {
-        const room_number = `${block}${floor}${roomNum.toString().padStart(3, '0')}`;
-        rooms.push([room_number, floor, `Building ${block}`, room_type, capacity, 'available', `Room ${room_number} - Capacity ${capacity} students`]);
-        totalRooms++;
+  let created = 0;
+  
+  try {
+    for (const block of blocksToUse) {
+      for (let floor = 1; floor <= floors_per_block; floor++) {
+        for (let roomNum = 1; roomNum <= rooms_per_floor; roomNum++) {
+          const room_number = `${block}${floor}${roomNum.toString().padStart(3, '0')}`;
+          await pool.query(
+            'INSERT INTO rooms (room_number, floor, building, room_type, capacity, room_status, description) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [room_number, floor, `Building ${block}`, room_type, capacity, 'available', `Room ${room_number} - Capacity ${capacity} students`]
+          );
+          created++;
+        }
       }
     }
+    res.json({ success: true, message: `${created} rooms created successfully!`, totalRooms: created });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
-  if (rooms.length === 0) {
-    return res.status(400).json({ success: false, message: 'No rooms to create' });
-  }
-  const query = 'INSERT INTO rooms (room_number, floor, building, room_type, capacity, room_status, description) VALUES ?';
-  db.query(query, [rooms], (err, result) => {
-    if (err) {
-      console.error('Bulk insert error:', err);
-      return res.status(500).json({ success: false, message: err.message });
-    }
-    res.json({ success: true, message: `${result.affectedRows} rooms created successfully!`, totalRooms: result.affectedRows });
-  });
 });
 
 // ========== APPLICATIONS (ADMIN) ==========
-app.get('/api/admin/applications', (req, res) => {
-  const query = `
-    SELECT a.*, s.first_name, s.last_name, s.student_id, r.room_number 
-    FROM applications a
-    JOIN students s ON a.student_id = s.id
-    JOIN rooms r ON a.room_id = r.id
-    ORDER BY a.application_date DESC
-  `;
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, applications: results });
-  });
+app.get('/api/admin/applications', async (req, res) => {
+  try {
+    const query = `
+      SELECT a.*, s.first_name, s.last_name, s.student_id, r.room_number 
+      FROM applications a
+      JOIN students s ON a.student_id = s.id
+      JOIN rooms r ON a.room_id = r.id
+      ORDER BY a.application_date DESC
+    `;
+    const result = await pool.query(query);
+    res.json({ success: true, applications: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.put('/api/admin/applications/:id/approve', (req, res) => {
+app.put('/api/admin/applications/:id/approve', async (req, res) => {
   const { id } = req.params;
-  db.query('SELECT student_id, room_id FROM applications WHERE id = ?', [id], (err, appResults) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (appResults.length === 0) return res.status(404).json({ success: false, message: 'Application not found' });
-    const { student_id, room_id } = appResults[0];
-    db.query('SELECT s.email, s.first_name, r.room_number FROM students s JOIN rooms r ON r.id = ? WHERE s.id = ?', [room_id, student_id], async (err, studentData) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      db.query('UPDATE applications SET status = "approved", reviewed_date = NOW() WHERE id = ?', [id], (err) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        db.query('INSERT INTO room_assignments (student_id, room_id, assignment_date, status) VALUES (?, ?, CURDATE(), "active")', [student_id, room_id], (err) => {
-          if (err) return res.status(500).json({ success: false, message: err.message });
-          db.query('UPDATE rooms SET current_occupancy = current_occupancy + 1, room_status = CASE WHEN current_occupancy + 1 >= capacity THEN "full" ELSE "available" END WHERE id = ?', [room_id], async (err) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            if (studentData[0]?.email) {
-              await sendApprovalEmail(studentData[0].email, studentData[0].first_name, studentData[0].room_number);
-            }
-            res.json({ success: true, message: 'Application approved and room assigned' });
-          });
-        });
-      });
-    });
-  });
+  try {
+    const appResult = await pool.query('SELECT student_id, room_id FROM applications WHERE id = $1', [id]);
+    if (appResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+    const { student_id, room_id } = appResult.rows[0];
+    
+    const studentData = await pool.query('SELECT s.email, s.first_name, r.room_number FROM students s JOIN rooms r ON r.id = $1 WHERE s.id = $2', [room_id, student_id]);
+    
+    await pool.query('UPDATE applications SET status = $1, reviewed_date = NOW() WHERE id = $2', ['approved', id]);
+    await pool.query('INSERT INTO room_assignments (student_id, room_id, assignment_date, status) VALUES ($1, $2, CURDATE(), $3)', [student_id, room_id, 'active']);
+    await pool.query('UPDATE rooms SET current_occupancy = current_occupancy + 1, room_status = CASE WHEN current_occupancy + 1 >= capacity THEN $1 ELSE $2 END WHERE id = $3', ['full', 'available', room_id]);
+    
+    if (studentData.rows[0]?.email) {
+      await sendApprovalEmail(studentData.rows[0].email, studentData.rows[0].first_name, studentData.rows[0].room_number);
+    }
+    res.json({ success: true, message: 'Application approved and room assigned' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.put('/api/admin/applications/:id/reject', (req, res) => {
+app.put('/api/admin/applications/:id/reject', async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
-  db.query('SELECT s.email, s.first_name FROM applications a JOIN students s ON a.student_id = s.id WHERE a.id = ?', [id], async (err, studentData) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    db.query('UPDATE applications SET status = "rejected", reason = ?, reviewed_date = NOW() WHERE id = ?', [reason, id], async (err) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (studentData[0]?.email) {
-        await sendRejectionEmail(studentData[0].email, studentData[0].first_name, reason);
-      }
-      res.json({ success: true, message: 'Application rejected' });
-    });
-  });
+  try {
+    const studentData = await pool.query('SELECT s.email, s.first_name FROM applications a JOIN students s ON a.student_id = s.id WHERE a.id = $1', [id]);
+    await pool.query('UPDATE applications SET status = $1, reason = $2, reviewed_date = NOW() WHERE id = $3', ['rejected', reason, id]);
+    if (studentData.rows[0]?.email) {
+      await sendRejectionEmail(studentData.rows[0].email, studentData.rows[0].first_name, reason);
+    }
+    res.json({ success: true, message: 'Application rejected' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ========== MAINTENANCE (ADMIN) ==========
-app.get('/api/admin/maintenance', (req, res) => {
-  const query = `
-    SELECT mr.*, r.room_number, s.first_name, s.last_name 
-    FROM maintenance_requests mr
-    JOIN rooms r ON mr.room_id = r.id
-    LEFT JOIN students s ON mr.student_id = s.id
-    ORDER BY 
-      CASE mr.priority 
-        WHEN 'emergency' THEN 1 
-        WHEN 'high' THEN 2 
-        WHEN 'medium' THEN 3 
-        ELSE 4 
-      END,
-      mr.created_at DESC
-  `;
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, requests: results });
-  });
+app.get('/api/admin/maintenance', async (req, res) => {
+  try {
+    const query = `
+      SELECT mr.*, r.room_number, s.first_name, s.last_name 
+      FROM maintenance_requests mr
+      JOIN rooms r ON mr.room_id = r.id
+      LEFT JOIN students s ON mr.student_id = s.id
+      ORDER BY 
+        CASE mr.priority 
+          WHEN 'emergency' THEN 1 
+          WHEN 'high' THEN 2 
+          WHEN 'medium' THEN 3 
+          ELSE 4 
+        END,
+        mr.created_at DESC
+    `;
+    const result = await pool.query(query);
+    res.json({ success: true, requests: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.put('/api/admin/maintenance/:id/status', (req, res) => {
+app.put('/api/admin/maintenance/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status, notes } = req.body;
-  db.query('SELECT s.email, s.first_name, mr.title FROM maintenance_requests mr JOIN students s ON mr.student_id = s.id WHERE mr.id = ?', [id], async (err, studentData) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    let query = 'UPDATE maintenance_requests SET status = ?';
+  try {
+    const studentData = await pool.query('SELECT s.email, s.first_name, mr.title FROM maintenance_requests mr JOIN students s ON mr.student_id = s.id WHERE mr.id = $1', [id]);
+    
+    let query = 'UPDATE maintenance_requests SET status = $1';
     let params = [status];
-    if (status === 'completed') query += ', completion_date = NOW()';
-    if (notes) { query += ', notes = ?'; params.push(notes); }
-    query += ' WHERE id = ?';
+    if (status === 'completed') {
+      query += ', completion_date = NOW()';
+    }
+    if (notes) {
+      query += ', notes = $' + (params.length + 1);
+      params.push(notes);
+    }
+    query += ' WHERE id = $' + (params.length + 1);
     params.push(id);
-    db.query(query, params, async (err) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (studentData[0]?.email) {
-        await sendMaintenanceEmail(studentData[0].email, studentData[0].first_name, studentData[0].title, status);
-      }
-      res.json({ success: true, message: 'Status updated' });
-    });
-  });
+    
+    await pool.query(query, params);
+    if (studentData.rows[0]?.email) {
+      await sendMaintenanceEmail(studentData.rows[0].email, studentData.rows[0].first_name, studentData.rows[0].title, status);
+    }
+    res.json({ success: true, message: 'Status updated' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ========== STUDENT ROUTES ==========
-app.post('/api/student/apply', (req, res) => {
+app.post('/api/student/apply', async (req, res) => {
   const { room_id, student_id } = req.body;
   if (!room_id || !student_id) {
     return res.status(400).json({ success: false, message: 'Room ID and Student ID are required' });
   }
-  db.query('SELECT id FROM students WHERE id = ?', [student_id], (err, studentResults) => {
-    if (err) return res.status(500).json({ success: false, message: 'Database error' });
-    if (studentResults.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
-    db.query('SELECT id FROM applications WHERE student_id = ? AND room_id = ? AND status != "rejected"', [student_id, room_id], (err, existing) => {
-      if (err) return res.status(500).json({ success: false, message: 'Database error' });
-      if (existing.length > 0) return res.status(400).json({ success: false, message: 'You have already applied for this room' });
-      db.query('INSERT INTO applications (student_id, room_id, status) VALUES (?, ?, "pending")', [student_id, room_id], (err, result) => {
-        if (err) return res.status(500).json({ success: false, message: 'Failed to submit application' });
-        res.json({ success: true, message: 'Application submitted successfully' });
-      });
-    });
-  });
+  try {
+    const studentResult = await pool.query('SELECT id FROM students WHERE id = $1', [student_id]);
+    if (studentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    const existing = await pool.query('SELECT id FROM applications WHERE student_id = $1 AND room_id = $2 AND status != $3', [student_id, room_id, 'rejected']);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ success: false, message: 'You have already applied for this room' });
+    }
+    await pool.query('INSERT INTO applications (student_id, room_id, status) VALUES ($1, $2, $3)', [student_id, room_id, 'pending']);
+    res.json({ success: true, message: 'Application submitted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.get('/api/student/profile', (req, res) => {
+app.get('/api/student/profile', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false, message: 'No token provided' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    db.query('SELECT * FROM students WHERE user_id = ?', [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (results.length === 0) return res.status(404).json({ success: false, message: 'Student profile not found' });
-      res.json({ success: true, student: results[0] });
-    });
+    const result = await pool.query('SELECT * FROM students WHERE user_id = $1', [decoded.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+    res.json({ success: true, student: result.rows[0] });
   } catch (error) {
     res.status(401).json({ success: false, message: 'Invalid token' });
   }
 });
 
-app.get('/api/student/applications', (req, res) => {
+app.get('/api/student/applications', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    db.query(`
+    const result = await pool.query(`
       SELECT a.*, r.room_number, r.building, r.floor, r.room_type
       FROM applications a
       JOIN rooms r ON a.room_id = r.id
       JOIN students s ON a.student_id = s.id
-      WHERE s.user_id = ?
+      WHERE s.user_id = $1
       ORDER BY a.application_date DESC
-    `, [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, applications: results });
-    });
+    `, [decoded.id]);
+    res.json({ success: true, applications: result.rows });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-app.get('/api/student/assignment/details', (req, res) => {
+app.get('/api/student/assignment/details', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    db.query(`
+    const result = await pool.query(`
       SELECT ra.*, r.room_number, r.floor, r.building, r.room_type, r.capacity, r.amenities, r.description
       FROM room_assignments ra
       JOIN rooms r ON ra.room_id = r.id
       JOIN students s ON ra.student_id = s.id
-      WHERE s.user_id = ? AND ra.status = 'active'
-    `, [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (results.length === 0) {
-        return res.json({ success: true, assignment: null, message: 'No active room assignment' });
-      }
-      res.json({ success: true, assignment: results[0] });
-    });
+      WHERE s.user_id = $1 AND ra.status = 'active'
+    `, [decoded.id]);
+    if (result.rows.length === 0) {
+      return res.json({ success: true, assignment: null, message: 'No active room assignment' });
+    }
+    res.json({ success: true, assignment: result.rows[0] });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-app.get('/api/student/maintenance', (req, res) => {
+app.get('/api/student/maintenance', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    db.query(`
+    const result = await pool.query(`
       SELECT mr.*, r.room_number 
       FROM maintenance_requests mr
       JOIN rooms r ON mr.room_id = r.id
       JOIN students s ON mr.student_id = s.id
-      WHERE s.user_id = ?
+      WHERE s.user_id = $1
       ORDER BY mr.created_at DESC
-    `, [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, requests: results });
-    });
+    `, [decoded.id]);
+    res.json({ success: true, requests: result.rows });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-app.post('/api/student/maintenance', (req, res) => {
+app.post('/api/student/maintenance', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { room_id, title, description, priority } = req.body;
-    db.query('SELECT id FROM students WHERE user_id = ?', [decoded.id], (err, studentResults) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (studentResults.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
-      const student_id = studentResults[0].id;
-      db.query('INSERT INTO maintenance_requests (room_id, student_id, title, description, priority, status) VALUES (?, ?, ?, ?, ?, "open")', [room_id, student_id, title, description, priority], (err, result) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Maintenance request submitted', id: result.insertId });
-      });
-    });
+    const studentResult = await pool.query('SELECT id FROM students WHERE user_id = $1', [decoded.id]);
+    if (studentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    const student_id = studentResult.rows[0].id;
+    const result = await pool.query(
+      'INSERT INTO maintenance_requests (room_id, student_id, title, description, priority, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [room_id, student_id, title, description, priority, 'open']
+    );
+    res.json({ success: true, message: 'Maintenance request submitted', id: result.rows[0].id });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-app.get('/api/student/payments', (req, res) => {
+app.get('/api/student/payments', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    db.query(`
+    const result = await pool.query(`
       SELECT p.*, r.room_number 
       FROM payments p
       JOIN students s ON p.student_id = s.id
       LEFT JOIN room_assignments ra ON p.room_assignment_id = ra.id
       LEFT JOIN rooms r ON ra.room_id = r.id
-      WHERE s.user_id = ?
+      WHERE s.user_id = $1
       ORDER BY p.due_date DESC
-    `, [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, payments: results });
-    });
+    `, [decoded.id]);
+    res.json({ success: true, payments: result.rows });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-app.get('/api/student/profile/details', (req, res) => {
+app.get('/api/student/profile/details', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    db.query(`
+    const result = await pool.query(`
       SELECT s.*, u.email 
       FROM students s
       JOIN users u ON s.user_id = u.id
-      WHERE s.user_id = ?
-    `, [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (results.length === 0) return res.status(404).json({ success: false, message: 'Profile not found' });
-      res.json({ success: true, profile: results[0] });
-    });
+      WHERE s.user_id = $1
+    `, [decoded.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Profile not found' });
+    }
+    res.json({ success: true, profile: result.rows[0] });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-app.put('/api/student/profile', (req, res) => {
+app.put('/api/student/profile', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { phone, address, city, major, year, parent_name, parent_phone } = req.body;
-    db.query(`
+    await pool.query(`
       UPDATE students 
-      SET phone = ?, address = ?, city = ?, major = ?, year = ?, parent_name = ?, parent_phone = ?
-      WHERE user_id = ?
-    `, [phone, address, city, major, year, parent_name, parent_phone, decoded.id], (err) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, message: 'Profile updated successfully' });
-    });
+      SET phone = $1, address = $2, city = $3, major = $4, year = $5, parent_name = $6, parent_phone = $7
+      WHERE user_id = $8
+    `, [phone, address, city, major, year, parent_name, parent_phone, decoded.id]);
+    res.json({ success: true, message: 'Profile updated successfully' });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-app.get('/api/student/penalties', (req, res) => {
+app.get('/api/student/penalties', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    db.query(`
+    const result = await pool.query(`
       SELECT p.*, r.room_number
       FROM payments p
       JOIN students s ON p.student_id = s.id
       LEFT JOIN rooms r ON s.room_id = r.id
-      WHERE s.user_id = ? AND p.penalty_type IS NOT NULL
+      WHERE s.user_id = $1 AND p.penalty_type IS NOT NULL
       ORDER BY p.issued_date DESC
-    `, [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, penalties: results });
-    });
+    `, [decoded.id]);
+    res.json({ success: true, penalties: result.rows });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
 // ========== PAYMENTS (ADMIN) ==========
-app.get('/api/admin/payments', (req, res) => {
-  const query = `
-    SELECT p.*, s.first_name, s.last_name, s.student_id, r.room_number
-    FROM payments p
-    JOIN students s ON p.student_id = s.id
-    LEFT JOIN room_assignments ra ON p.room_assignment_id = ra.id
-    LEFT JOIN rooms r ON ra.room_id = r.id
-    ORDER BY p.due_date DESC
-  `;
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, payments: results });
-  });
+app.get('/api/admin/payments', async (req, res) => {
+  try {
+    const query = `
+      SELECT p.*, s.first_name, s.last_name, s.student_id, r.room_number
+      FROM payments p
+      JOIN students s ON p.student_id = s.id
+      LEFT JOIN room_assignments ra ON p.room_assignment_id = ra.id
+      LEFT JOIN rooms r ON ra.room_id = r.id
+      ORDER BY p.due_date DESC
+    `;
+    const result = await pool.query(query);
+    res.json({ success: true, payments: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.post('/api/admin/payments', (req, res) => {
+app.post('/api/admin/payments', async (req, res) => {
   const { student_id, amount, due_date, payment_date, status, notes } = req.body;
-  db.query(
-    'INSERT INTO payments (student_id, amount, due_date, payment_date, status, notes) VALUES (?, ?, ?, ?, ?, ?)',
-    [student_id, amount, due_date, payment_date || null, status || 'pending', notes || null],
-    (err, result) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, message: 'Payment record created', id: result.insertId });
-    }
-  );
+  try {
+    const result = await pool.query(
+      'INSERT INTO payments (student_id, amount, due_date, payment_date, status, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [student_id, amount, due_date, payment_date || null, status || 'pending', notes || null]
+    );
+    res.json({ success: true, message: 'Payment record created', id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.put('/api/admin/payments/:id', (req, res) => {
+app.put('/api/admin/payments/:id', async (req, res) => {
   const { id } = req.params;
   const { status, payment_date, transaction_id } = req.body;
-  db.query(
-    'UPDATE payments SET status = ?, payment_date = ?, transaction_id = ? WHERE id = ?',
-    [status, payment_date || new Date(), transaction_id || null, id],
-    (err) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, message: 'Payment updated' });
-    }
-  );
+  try {
+    await pool.query(
+      'UPDATE payments SET status = $1, payment_date = $2, transaction_id = $3 WHERE id = $4',
+      [status, payment_date || new Date(), transaction_id || null, id]
+    );
+    res.json({ success: true, message: 'Payment updated' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.get('/api/admin/payments/summary', (req, res) => {
-  const query = `
-    SELECT 
-      SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_collected,
-      SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_pending,
-      SUM(CASE WHEN status = 'overdue' THEN amount ELSE 0 END) as total_overdue,
-      COUNT(CASE WHEN status = 'overdue' THEN 1 END) as overdue_count
-    FROM payments
-  `;
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, summary: results[0] });
-  });
+app.get('/api/admin/payments/summary', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_collected,
+        SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_pending,
+        SUM(CASE WHEN status = 'overdue' THEN amount ELSE 0 END) as total_overdue,
+        COUNT(CASE WHEN status = 'overdue' THEN 1 END) as overdue_count
+      FROM payments
+    `);
+    res.json({ success: true, summary: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ========== PENALTY SYSTEM (ADMIN) ==========
-app.get('/api/admin/penalties', (req, res) => {
-  const query = `
-    SELECT p.*, s.first_name, s.last_name, s.student_id, s.room_id, r.room_number
-    FROM payments p
-    JOIN students s ON p.student_id = s.id
-    LEFT JOIN rooms r ON s.room_id = r.id
-    WHERE p.penalty_type IS NOT NULL
-    ORDER BY p.issued_date DESC
-  `;
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, penalties: results });
-  });
+app.get('/api/admin/penalties', async (req, res) => {
+  try {
+    const query = `
+      SELECT p.*, s.first_name, s.last_name, s.student_id, s.room_id, r.room_number
+      FROM payments p
+      JOIN students s ON p.student_id = s.id
+      LEFT JOIN rooms r ON s.room_id = r.id
+      WHERE p.penalty_type IS NOT NULL
+      ORDER BY p.issued_date DESC
+    `;
+    const result = await pool.query(query);
+    res.json({ success: true, penalties: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.post('/api/admin/penalties', (req, res) => {
+app.post('/api/admin/penalties', async (req, res) => {
   const { student_id, penalty_amount, penalty_type, penalty_reason, due_date, notes } = req.body;
-  db.query('SELECT s.email, s.first_name FROM students s WHERE s.id = ?', [student_id], async (err, studentData) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    db.query(
+  try {
+    const studentData = await pool.query('SELECT s.email, s.first_name FROM students s WHERE s.id = $1', [student_id]);
+    const result = await pool.query(
       `INSERT INTO payments 
        (student_id, penalty_amount, penalty_type, penalty_reason, due_date, status, issued_date, notes) 
-       VALUES (?, ?, ?, ?, ?, 'pending', CURDATE(), ?)`,
-      [student_id, penalty_amount, penalty_type, penalty_reason, due_date, notes],
-      async (err, result) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        if (studentData[0]?.email) {
-          await sendPenaltyEmail(studentData[0].email, studentData[0].first_name, penalty_amount, penalty_reason);
-        }
-        res.json({ success: true, message: 'Penalty issued', id: result.insertId });
-      }
+       VALUES ($1, $2, $3, $4, $5, 'pending', CURDATE(), $6) RETURNING id`,
+      [student_id, penalty_amount, penalty_type, penalty_reason, due_date, notes]
     );
-  });
+    if (studentData.rows[0]?.email) {
+      await sendPenaltyEmail(studentData.rows[0].email, studentData.rows[0].first_name, penalty_amount, penalty_reason);
+    }
+    res.json({ success: true, message: 'Penalty issued', id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.put('/api/admin/penalties/:id', (req, res) => {
+app.put('/api/admin/penalties/:id', async (req, res) => {
   const { id } = req.params;
   const { status, payment_date } = req.body;
-  db.query('UPDATE payments SET status = ?, payment_date = ? WHERE id = ?', [status, payment_date || new Date(), id], (err) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
+  try {
+    await pool.query('UPDATE payments SET status = $1, payment_date = $2 WHERE id = $3', [status, payment_date || new Date(), id]);
     res.json({ success: true, message: 'Penalty updated' });
-  });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ========== REPORTS ==========
-app.get('/api/admin/reports/occupancy', (req, res) => {
-  db.query(`
-    SELECT 
-      room_number, building, floor, room_type, capacity, current_occupancy,
-      ROUND((current_occupancy / capacity) * 100, 2) as occupancy_percentage,
-      room_status
-    FROM rooms
-    ORDER BY building ASC, floor ASC, room_number ASC
-  `, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, report: results });
-  });
+app.get('/api/admin/reports/occupancy', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        room_number, building, floor, room_type, capacity, current_occupancy,
+        ROUND((current_occupancy::numeric / capacity) * 100, 2) as occupancy_percentage,
+        room_status
+      FROM rooms
+      ORDER BY building ASC, floor ASC, room_number ASC
+    `);
+    res.json({ success: true, report: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.get('/api/admin/reports/payments', (req, res) => {
-  db.query(`
-    SELECT 
-      s.student_id, s.first_name, s.last_name, s.email,
-      SUM(CASE WHEN p.status = 'paid' THEN p.penalty_amount ELSE 0 END) as amount_paid,
-      SUM(CASE WHEN p.status = 'pending' THEN p.penalty_amount ELSE 0 END) as amount_pending,
-      SUM(CASE WHEN p.status = 'overdue' THEN p.penalty_amount ELSE 0 END) as amount_overdue
-    FROM students s
-    LEFT JOIN payments p ON s.id = p.student_id
-    GROUP BY s.id
-    ORDER BY s.last_name ASC
-  `, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, report: results });
-  });
+app.get('/api/admin/reports/payments', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        s.student_id, s.first_name, s.last_name, s.email,
+        SUM(CASE WHEN p.status = 'paid' THEN p.penalty_amount ELSE 0 END) as amount_paid,
+        SUM(CASE WHEN p.status = 'pending' THEN p.penalty_amount ELSE 0 END) as amount_pending,
+        SUM(CASE WHEN p.status = 'overdue' THEN p.penalty_amount ELSE 0 END) as amount_overdue
+      FROM students s
+      LEFT JOIN payments p ON s.id = p.student_id
+      GROUP BY s.id, s.student_id, s.first_name, s.last_name, s.email
+      ORDER BY s.last_name ASC
+    `);
+    res.json({ success: true, report: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-app.get('/api/admin/reports/maintenance', (req, res) => {
-  db.query(`
-    SELECT 
-      mr.*, r.room_number, s.first_name, s.last_name, s.student_id
-    FROM maintenance_requests mr
-    JOIN rooms r ON mr.room_id = r.id
-    LEFT JOIN students s ON mr.student_id = s.id
-    ORDER BY 
-      CASE mr.priority 
-        WHEN 'emergency' THEN 1 
-        WHEN 'high' THEN 2 
-        WHEN 'medium' THEN 3 
-        ELSE 4 
-      END,
-      mr.created_at DESC
-  `, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, report: results });
-  });
+app.get('/api/admin/reports/maintenance', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        mr.*, r.room_number, s.first_name, s.last_name, s.student_id
+      FROM maintenance_requests mr
+      JOIN rooms r ON mr.room_id = r.id
+      LEFT JOIN students s ON mr.student_id = s.id
+      ORDER BY 
+        CASE mr.priority 
+          WHEN 'emergency' THEN 1 
+          WHEN 'high' THEN 2 
+          WHEN 'medium' THEN 3 
+          ELSE 4 
+        END,
+        mr.created_at DESC
+    `);
+    res.json({ success: true, report: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+// Get admin profile details
+app.get('/api/admin/profile/details', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'No token provided' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const result = await pool.query(`
+      SELECT a.*, u.email 
+      FROM admins a 
+      JOIN users u ON a.user_id = u.id 
+      WHERE a.user_id = $1
+    `, [decoded.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+    
+    res.json({ success: true, profile: result.rows[0] });
+  } catch (error) {
+    console.error('Admin profile error:', error);
+    res.status(401).json({ success: false, message: 'Invalid token' });
+  }
 });
 
-app.get('/api/admin/reports/assignments', (req, res) => {
-  const query = `
-    SELECT 
-      ra.id, ra.assignment_date, ra.status as assignment_status,
-      s.id as student_id, s.student_id as student_number, s.first_name, s.last_name, s.email, s.phone, s.major, s.year,
-      r.id as room_id, r.room_number, r.building, r.floor, r.room_type, r.capacity
-    FROM room_assignments ra
-    JOIN students s ON ra.student_id = s.id
-    JOIN rooms r ON ra.room_id = r.id
-    WHERE ra.status = 'active'
-    ORDER BY r.building ASC, r.floor ASC, r.room_number ASC
-  `;
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, assignments: results });
-  });
+app.get('/api/admin/reports/assignments', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        ra.id, ra.assignment_date, ra.status as assignment_status,
+        s.id as student_id, s.student_id as student_number, s.first_name, s.last_name, s.email, s.phone, s.major, s.year,
+        r.id as room_id, r.room_number, r.building, r.floor, r.room_type, r.capacity
+      FROM room_assignments ra
+      JOIN students s ON ra.student_id = s.id
+      JOIN rooms r ON ra.room_id = r.id
+      WHERE ra.status = 'active'
+      ORDER BY r.building ASC, r.floor ASC, r.room_number ASC
+    `);
+    res.json({ success: true, assignments: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ========== PROFILE PHOTO UPLOADS ==========
@@ -971,17 +1004,19 @@ const studentUpload = multer({
   }
 });
 
-app.post('/api/student/upload-photo', verifyToken, studentUpload.single('profile_image'), (req, res) => {
+app.post('/api/student/upload-photo', verifyToken, studentUpload.single('profile_image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
   const imageUrl = `/uploads/${req.file.filename}`;
-  db.query('SELECT id FROM students WHERE user_id = ?', [req.user.id], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (results.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
-    db.query('UPDATE students SET profile_image = ? WHERE id = ?', [imageUrl, results[0].id], (err) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, message: 'Photo uploaded successfully', imageUrl });
-    });
-  });
+  try {
+    const studentResult = await pool.query('SELECT id FROM students WHERE user_id = $1', [req.user.id]);
+    if (studentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    await pool.query('UPDATE students SET profile_image = $1 WHERE id = $2', [imageUrl, studentResult.rows[0].id]);
+    res.json({ success: true, message: 'Photo uploaded successfully', imageUrl });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 const adminStorage = multer.diskStorage({
@@ -1004,41 +1039,41 @@ const adminUpload = multer({
   }
 });
 
-app.post('/api/admin/upload-photo', verifyToken, adminUpload.single('profile_image'), (req, res) => {
+app.post('/api/admin/upload-photo', verifyToken, adminUpload.single('profile_image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
   const imageUrl = `/uploads/${req.file.filename}`;
-  db.query('UPDATE admins SET profile_image = ? WHERE user_id = ?', [imageUrl, req.user.id], (err) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
+  try {
+    await pool.query('UPDATE admins SET profile_image = $1 WHERE user_id = $2', [imageUrl, req.user.id]);
     res.json({ success: true, message: 'Photo uploaded', imageUrl });
-  });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ========== ADMIN PROFILE ROUTES ==========
-app.get('/api/admin/profile/details', (req, res) => {
+app.get('/api/admin/profile/details', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    db.query(`SELECT a.*, u.email FROM admins a JOIN users u ON a.user_id = u.id WHERE a.user_id = ?`, [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (results.length === 0) return res.status(404).json({ success: false, message: 'Admin not found' });
-      res.json({ success: true, profile: results[0] });
-    });
+    const result = await pool.query(`SELECT a.*, u.email FROM admins a JOIN users u ON a.user_id = u.id WHERE a.user_id = $1`, [decoded.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+    res.json({ success: true, profile: result.rows[0] });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-app.put('/api/admin/profile', (req, res) => {
+app.put('/api/admin/profile', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { phone, position, department, address } = req.body;
-    db.query(`UPDATE admins SET phone = ?, position = ?, department = ?, address = ? WHERE user_id = ?`, [phone, position, department, address, decoded.id], (err) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      res.json({ success: true, message: 'Profile updated' });
-    });
+    await pool.query(`UPDATE admins SET phone = $1, position = $2, department = $3, address = $4 WHERE user_id = $5`, [phone, position, department, address, decoded.id]);
+    res.json({ success: true, message: 'Profile updated' });
   } catch (error) {
     res.status(401).json({ success: false });
   }
@@ -1052,486 +1087,361 @@ app.put('/api/admin/change-password', async (req, res) => {
     const { current_password, new_password } = req.body;
     if (!current_password || !new_password) return res.status(400).json({ success: false, message: 'Current password and new password required' });
     if (new_password.length < 6) return res.status(400).json({ success: false, message: 'New password must be at least 6 characters' });
-    db.query('SELECT * FROM users WHERE id = ?', [decoded.id], async (err, users) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (users.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
-      const user = users[0];
-      const passwordMatch = await bcrypt.compare(current_password, user.password);
-      if (!passwordMatch) return res.status(401).json({ success: false, message: 'Current password is incorrect' });
-      const hashedPassword = await bcrypt.hash(new_password, 10);
-      db.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, decoded.id], (err) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Password changed successfully' });
-      });
-    });
+    
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [decoded.id]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const user = userResult.rows[0];
+    const passwordMatch = await bcrypt.compare(current_password, user.password);
+    if (!passwordMatch) return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, decoded.id]);
+    res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
     res.status(401).json({ success: false, message: 'Invalid token' });
   }
 });
+
 // ========== FORGOT PASSWORD ==========
-
-// Generate random token for password reset
-const crypto = require('crypto');
-
-// Request password reset - sends email with reset link
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { email } = req.body;
-  
   if (!email) {
     return res.status(400).json({ success: false, message: 'Email is required' });
   }
-  
-  // Check if user exists
-  db.query('SELECT id, email, role FROM users WHERE email = ?', [email], async (err, users) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (users.length === 0) {
-      // For security, don't reveal that email doesn't exist
+  try {
+    const userResult = await pool.query('SELECT id, email, role FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
       return res.json({ success: true, message: 'If your email is registered, you will receive a reset link' });
     }
-    
-    const user = users[0];
-    
-    // Generate reset token
+    const user = userResult.rows[0];
     const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetExpires = new Date(Date.now() + 3600000); // 1 hour from now
+    const resetExpires = new Date(Date.now() + 3600000);
+    await pool.query('UPDATE users SET reset_token = $1, reset_expires = $2 WHERE id = $3', [resetToken, resetExpires, user.id]);
     
-    // Save token to database (you need to add reset_token column to users table)
-    db.query('UPDATE users SET reset_token = ?, reset_expires = ? WHERE id = ?', 
-      [resetToken, resetExpires, user.id], 
-      async (err) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        
-        // Send reset email
-        const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`;
-        const subject = '🔐 Password Reset Request';
-        const html = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px;">
-            <h2 style="color: #5B5CE2;">🏛️ University Dormitory</h2>
-            <h3>Password Reset Request</h3>
-            <p>We received a request to reset your password. Click the button below to create a new password:</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${resetLink}" style="background: #5B5CE2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block;">Reset Password</a>
-            </div>
-            <p>This link will expire in <strong>1 hour</strong>.</p>
-            <p>If you didn't request this, please ignore this email.</p>
-            <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;">
-            <p style="color: #6B7280; font-size: 12px;">University Dormitory Management System</p>
-          </div>
-        `;
-        
-        await sendEmail(email, subject, html);
-        res.json({ success: true, message: 'If your email is registered, you will receive a reset link' });
-      }
-    );
-  });
+    const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`;
+    const subject = '🔐 Password Reset Request';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px;">
+        <h2 style="color: #5B5CE2;">🏛️ University Dormitory</h2>
+        <h3>Password Reset Request</h3>
+        <p>We received a request to reset your password. Click the button below to create a new password:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetLink}" style="background: #5B5CE2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block;">Reset Password</a>
+        </div>
+        <p>This link will expire in <strong>1 hour</strong>.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;">
+        <p style="color: #6B7280; font-size: 12px;">University Dormitory Management System</p>
+      </div>
+    `;
+    await sendEmail(email, subject, html);
+    res.json({ success: true, message: 'If your email is registered, you will receive a reset link' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
 
-// Verify reset token
-app.post('/api/auth/verify-reset-token', (req, res) => {
+app.post('/api/auth/verify-reset-token', async (req, res) => {
   const { token } = req.body;
-  
-  db.query('SELECT id, email FROM users WHERE reset_token = ? AND reset_expires > NOW()', [token], (err, users) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (users.length === 0) {
+  try {
+    const result = await pool.query('SELECT id, email FROM users WHERE reset_token = $1 AND reset_expires > NOW()', [token]);
+    if (result.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
     }
-    
-    res.json({ success: true, message: 'Token is valid', email: users[0].email });
-  });
+    res.json({ success: true, message: 'Token is valid', email: result.rows[0].email });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
 
-// Reset password
 app.post('/api/auth/reset-password', async (req, res) => {
   const { token, new_password } = req.body;
-  
   if (!new_password || new_password.length < 6) {
     return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
   }
-  
-  db.query('SELECT id FROM users WHERE reset_token = ? AND reset_expires > NOW()', [token], async (err, users) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (users.length === 0) {
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE reset_token = $1 AND reset_expires > NOW()', [token]);
+    if (userResult.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
     }
-    
-    const userId = users[0].id;
+    const userId = userResult.rows[0].id;
     const hashedPassword = await bcrypt.hash(new_password, 10);
-    
-    db.query('UPDATE users SET password = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?', 
-      [hashedPassword, userId], 
-      (err) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, message: 'Password reset successfully. You can now login with your new password.' });
-      }
-    );
-  });
+    await pool.query('UPDATE users SET password = $1, reset_token = NULL, reset_expires = NULL WHERE id = $2', [hashedPassword, userId]);
+    res.json({ success: true, message: 'Password reset successfully. You can now login with your new password.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
+
 // ========== ROOM SWAP SYSTEM ==========
-
-// Get all students (for dropdown)
-app.get('/api/students/all', (req, res) => {
-  db.query('SELECT id, student_id, first_name, last_name, room_id FROM students WHERE status = "active"', (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, students: results });
-  });
+app.get('/api/students/all', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, student_id, first_name, last_name, room_id FROM students WHERE status = $1', ['active']);
+    res.json({ success: true, students: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-// Create a swap request
-app.post('/api/student/swap-request', (req, res) => {
+app.post('/api/student/swap-request', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
-  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { target_student_id, reason } = req.body;
     
-    // Get requester student info
-    db.query('SELECT id, room_id FROM students WHERE user_id = ?', [decoded.id], (err, requester) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (requester.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
-      
-      const requester_student_id = requester[0].id;
-      const requester_room_id = requester[0].room_id;
-      
-      if (!requester_room_id) {
-        return res.status(400).json({ success: false, message: 'You are not assigned to any room' });
-      }
-      
-      // Get target student room
-      db.query('SELECT id, room_id FROM students WHERE id = ?', [target_student_id], (err, target) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        if (target.length === 0) return res.status(404).json({ success: false, message: 'Target student not found' });
-        
-        const target_student_id_val = target[0].id;
-        const target_room_id = target[0].room_id;
-        
-        if (!target_room_id) {
-          return res.status(400).json({ success: false, message: 'Target student has no room assignment' });
-        }
-        
-        // Check if swap request already exists
-        db.query('SELECT id FROM room_swap_requests WHERE (requester_student_id = ? AND target_student_id = ?) AND status = "pending"', 
-          [requester_student_id, target_student_id_val], 
-          (err, existing) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            if (existing.length > 0) {
-              return res.status(400).json({ success: false, message: 'You already have a pending swap request with this student' });
-            }
-            
-            // Create swap request
-            db.query(
-              `INSERT INTO room_swap_requests 
-               (requester_student_id, requester_room_id, target_student_id, target_room_id, reason) 
-               VALUES (?, ?, ?, ?, ?)`,
-              [requester_student_id, requester_room_id, target_student_id_val, target_room_id, reason || null],
-              (err, result) => {
-                if (err) return res.status(500).json({ success: false, message: err.message });
-                res.json({ success: true, message: 'Swap request sent successfully', id: result.insertId });
-              }
-            );
-          }
-        );
-      });
-    });
+    const requesterResult = await pool.query('SELECT id, room_id FROM students WHERE user_id = $1', [decoded.id]);
+    if (requesterResult.rows.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
+    const requester_student_id = requesterResult.rows[0].id;
+    const requester_room_id = requesterResult.rows[0].room_id;
+    if (!requester_room_id) return res.status(400).json({ success: false, message: 'You are not assigned to any room' });
+    
+    const targetResult = await pool.query('SELECT id, room_id FROM students WHERE id = $1', [target_student_id]);
+    if (targetResult.rows.length === 0) return res.status(404).json({ success: false, message: 'Target student not found' });
+    const target_student_id_val = targetResult.rows[0].id;
+    const target_room_id = targetResult.rows[0].room_id;
+    if (!target_room_id) return res.status(400).json({ success: false, message: 'Target student has no room assignment' });
+    
+    const existing = await pool.query('SELECT id FROM room_swap_requests WHERE (requester_student_id = $1 AND target_student_id = $2) AND status = $3', [requester_student_id, target_student_id_val, 'pending']);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ success: false, message: 'You already have a pending swap request with this student' });
+    }
+    
+    const result = await pool.query(
+      `INSERT INTO room_swap_requests 
+       (requester_student_id, requester_room_id, target_student_id, target_room_id, reason) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [requester_student_id, requester_room_id, target_student_id_val, target_room_id, reason || null]
+    );
+    res.json({ success: true, message: 'Swap request sent successfully', id: result.rows[0].id });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-// Get my swap requests (as requester)
-app.get('/api/student/my-swap-requests', (req, res) => {
+app.get('/api/student/my-swap-requests', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
-  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const studentResult = await pool.query('SELECT id FROM students WHERE user_id = $1', [decoded.id]);
+    if (studentResult.rows.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
     
-    db.query('SELECT id FROM students WHERE user_id = ?', [decoded.id], (err, student) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (student.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
-      
-      db.query(`
-        SELECT rs.*, 
-               s1.first_name as requester_first, s1.last_name as requester_last, s1.student_id as requester_number,
-               s2.first_name as target_first, s2.last_name as target_last, s2.student_id as target_number,
-               r1.room_number as requester_room, r2.room_number as target_room
-        FROM room_swap_requests rs
-        JOIN students s1 ON rs.requester_student_id = s1.id
-        JOIN students s2 ON rs.target_student_id = s2.id
-        JOIN rooms r1 ON rs.requester_room_id = r1.id
-        JOIN rooms r2 ON rs.target_room_id = r2.id
-        WHERE rs.requester_student_id = ? OR rs.target_student_id = ?
-        ORDER BY rs.created_at DESC
-      `, [student[0].id, student[0].id], (err, results) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        res.json({ success: true, requests: results });
-      });
-    });
+    const result = await pool.query(`
+      SELECT rs.*, 
+             s1.first_name as requester_first, s1.last_name as requester_last, s1.student_id as requester_number,
+             s2.first_name as target_first, s2.last_name as target_last, s2.student_id as target_number,
+             r1.room_number as requester_room, r2.room_number as target_room
+      FROM room_swap_requests rs
+      JOIN students s1 ON rs.requester_student_id = s1.id
+      JOIN students s2 ON rs.target_student_id = s2.id
+      JOIN rooms r1 ON rs.requester_room_id = r1.id
+      JOIN rooms r2 ON rs.target_room_id = r2.id
+      WHERE rs.requester_student_id = $1 OR rs.target_student_id = $1
+      ORDER BY rs.created_at DESC
+    `, [studentResult.rows[0].id]);
+    res.json({ success: true, requests: result.rows });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-// Respond to swap request (accept/reject)
-app.put('/api/student/swap-request/:id/respond', (req, res) => {
+app.put('/api/student/swap-request/:id/respond', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
   const { id } = req.params;
-  const { action } = req.body; // 'accept' or 'reject'
-  
+  const { action } = req.body;
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const studentResult = await pool.query('SELECT id FROM students WHERE user_id = $1', [decoded.id]);
+    if (studentResult.rows.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
     
-    db.query('SELECT id FROM students WHERE user_id = ?', [decoded.id], (err, student) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      if (student.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
+    if (action === 'accept') {
+      const swapResult = await pool.query('SELECT * FROM room_swap_requests WHERE id = $1 AND target_student_id = $2 AND status = $3', [id, studentResult.rows[0].id, 'pending']);
+      if (swapResult.rows.length === 0) return res.status(404).json({ success: false, message: 'Swap request not found' });
       
-      if (action === 'accept') {
-        // Get swap request details
-        db.query('SELECT * FROM room_swap_requests WHERE id = ? AND target_student_id = ? AND status = "pending"', 
-          [id, student[0].id], 
-          (err, swap) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            if (swap.length === 0) return res.status(404).json({ success: false, message: 'Swap request not found' });
-            
-            const requester_id = swap[0].requester_student_id;
-            const requester_room = swap[0].requester_room_id;
-            const target_room = swap[0].target_room_id;
-            
-            // Swap rooms in room_assignments
-            db.query('UPDATE room_assignments SET room_id = ? WHERE student_id = ? AND status = "active"', 
-              [target_room, requester_id], (err) => {
-              if (err) return res.status(500).json({ success: false, message: err.message });
-              
-              db.query('UPDATE room_assignments SET room_id = ? WHERE student_id = ? AND status = "active"', 
-                [requester_room, student[0].id], (err) => {
-                if (err) return res.status(500).json({ success: false, message: err.message });
-                
-                // Update students table room_id
-                db.query('UPDATE students SET room_id = ? WHERE id = ?', [target_room, requester_id], (err) => {
-                  if (err) return res.status(500).json({ success: false, message: err.message });
-                  
-                  db.query('UPDATE students SET room_id = ? WHERE id = ?', [requester_room, student[0].id], (err) => {
-                    if (err) return res.status(500).json({ success: false, message: err.message });
-                    
-                    // Update swap request status
-                    db.query('UPDATE room_swap_requests SET status = "approved" WHERE id = ?', [id], (err) => {
-                      if (err) return res.status(500).json({ success: false, message: err.message });
-                      res.json({ success: true, message: 'Room swap completed successfully!' });
-                    });
-                  });
-                });
-              });
-            });
-          });
-      } else {
-        // Reject
-        db.query('UPDATE room_swap_requests SET status = "rejected" WHERE id = ? AND target_student_id = ?', 
-          [id, student[0].id], 
-          (err) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            res.json({ success: true, message: 'Swap request rejected' });
-          });
-      }
-    });
+      const requester_id = swapResult.rows[0].requester_student_id;
+      const requester_room = swapResult.rows[0].requester_room_id;
+      const target_room = swapResult.rows[0].target_room_id;
+      
+      await pool.query('UPDATE room_assignments SET room_id = $1 WHERE student_id = $2 AND status = $3', [target_room, requester_id, 'active']);
+      await pool.query('UPDATE room_assignments SET room_id = $1 WHERE student_id = $2 AND status = $3', [requester_room, studentResult.rows[0].id, 'active']);
+      await pool.query('UPDATE students SET room_id = $1 WHERE id = $2', [target_room, requester_id]);
+      await pool.query('UPDATE students SET room_id = $1 WHERE id = $2', [requester_room, studentResult.rows[0].id]);
+      await pool.query('UPDATE room_swap_requests SET status = $1 WHERE id = $2', ['approved', id]);
+      res.json({ success: true, message: 'Room swap completed successfully!' });
+    } else {
+      await pool.query('UPDATE room_swap_requests SET status = $1 WHERE id = $2 AND target_student_id = $3', ['rejected', id, studentResult.rows[0].id]);
+      res.json({ success: true, message: 'Swap request rejected' });
+    }
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-// Admin - Get all swap requests
-app.get('/api/admin/swap-requests', (req, res) => {
-  db.query(`
-    SELECT rs.*, 
-           s1.first_name as requester_first, s1.last_name as requester_last, s1.student_id as requester_number,
-           s2.first_name as target_first, s2.last_name as target_last, s2.student_id as target_number,
-           r1.room_number as requester_room, r2.room_number as target_room
-    FROM room_swap_requests rs
-    JOIN students s1 ON rs.requester_student_id = s1.id
-    JOIN students s2 ON rs.target_student_id = s2.id
-    JOIN rooms r1 ON rs.requester_room_id = r1.id
-    JOIN rooms r2 ON rs.target_room_id = r2.id
-    ORDER BY rs.created_at DESC
-  `, (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, requests: results });
-  });
+app.get('/api/admin/swap-requests', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT rs.*, 
+             s1.first_name as requester_first, s1.last_name as requester_last, s1.student_id as requester_number,
+             s2.first_name as target_first, s2.last_name as target_last, s2.student_id as target_number,
+             r1.room_number as requester_room, r2.room_number as target_room
+      FROM room_swap_requests rs
+      JOIN students s1 ON rs.requester_student_id = s1.id
+      JOIN students s2 ON rs.target_student_id = s2.id
+      JOIN rooms r1 ON rs.requester_room_id = r1.id
+      JOIN rooms r2 ON rs.target_room_id = r2.id
+      ORDER BY rs.created_at DESC
+    `);
+    res.json({ success: true, requests: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-// Admin - Approve swap request
-app.put('/api/admin/swap-requests/:id/approve', (req, res) => {
+app.put('/api/admin/swap-requests/:id/approve', async (req, res) => {
   const { id } = req.params;
-  
-  db.query('SELECT * FROM room_swap_requests WHERE id = ? AND status = "pending"', [id], (err, swap) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (swap.length === 0) return res.status(404).json({ success: false, message: 'Swap request not found' });
+  try {
+    const swapResult = await pool.query('SELECT * FROM room_swap_requests WHERE id = $1 AND status = $2', [id, 'pending']);
+    if (swapResult.rows.length === 0) return res.status(404).json({ success: false, message: 'Swap request not found' });
     
-    const requester_id = swap[0].requester_student_id;
-    const requester_room = swap[0].requester_room_id;
-    const target_id = swap[0].target_student_id;
-    const target_room = swap[0].target_room_id;
+    const requester_id = swapResult.rows[0].requester_student_id;
+    const requester_room = swapResult.rows[0].requester_room_id;
+    const target_id = swapResult.rows[0].target_student_id;
+    const target_room = swapResult.rows[0].target_room_id;
     
-    // Swap rooms
-    db.query('UPDATE room_assignments SET room_id = ? WHERE student_id = ? AND status = "active"', [target_room, requester_id], (err) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      
-      db.query('UPDATE room_assignments SET room_id = ? WHERE student_id = ? AND status = "active"', [requester_room, target_id], (err) => {
-        if (err) return res.status(500).json({ success: false, message: err.message });
-        
-        db.query('UPDATE students SET room_id = ? WHERE id = ?', [target_room, requester_id], (err) => {
-          if (err) return res.status(500).json({ success: false, message: err.message });
-          
-          db.query('UPDATE students SET room_id = ? WHERE id = ?', [requester_room, target_id], (err) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            
-            db.query('UPDATE room_swap_requests SET status = "approved" WHERE id = ?', [id], (err) => {
-              if (err) return res.status(500).json({ success: false, message: err.message });
-              res.json({ success: true, message: 'Swap request approved and rooms swapped' });
-            });
-          });
-        });
-      });
-    });
-  });
+    await pool.query('UPDATE room_assignments SET room_id = $1 WHERE student_id = $2 AND status = $3', [target_room, requester_id, 'active']);
+    await pool.query('UPDATE room_assignments SET room_id = $1 WHERE student_id = $2 AND status = $3', [requester_room, target_id, 'active']);
+    await pool.query('UPDATE students SET room_id = $1 WHERE id = $2', [target_room, requester_id]);
+    await pool.query('UPDATE students SET room_id = $1 WHERE id = $2', [requester_room, target_id]);
+    await pool.query('UPDATE room_swap_requests SET status = $1 WHERE id = $2', ['approved', id]);
+    res.json({ success: true, message: 'Swap request approved and rooms swapped' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
+
 // ========== ATTENDANCE SYSTEM ==========
-
-// Get all students for attendance
-app.get('/api/admin/attendance/students', (req, res) => {
-  db.query('SELECT id, student_id, first_name, last_name FROM students WHERE status = "active"', (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, students: results });
-  });
+app.get('/api/admin/attendance/students', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, student_id, first_name, last_name FROM students WHERE status = $1', ['active']);
+    res.json({ success: true, students: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-// Get attendance for a specific date
-app.get('/api/admin/attendance', (req, res) => {
+app.get('/api/admin/attendance', async (req, res) => {
   const { date } = req.query;
   const attendanceDate = date || new Date().toISOString().split('T')[0];
-  
-  db.query(`
-    SELECT s.id, s.student_id, s.first_name, s.last_name, 
-           a.status, a.check_in_time, a.check_out_time, a.notes, a.id as attendance_id
-    FROM students s
-    LEFT JOIN attendance a ON s.id = a.student_id AND a.date = ?
-    WHERE s.status = 'active'
-    ORDER BY s.first_name ASC
-  `, [attendanceDate], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, attendance: results, date: attendanceDate });
-  });
+  try {
+    const result = await pool.query(`
+      SELECT s.id, s.student_id, s.first_name, s.last_name, 
+             a.status, a.check_in_time, a.check_out_time, a.notes, a.id as attendance_id
+      FROM students s
+      LEFT JOIN attendance a ON s.id = a.student_id AND a.date = $1
+      WHERE s.status = 'active'
+      ORDER BY s.first_name ASC
+    `, [attendanceDate]);
+    res.json({ success: true, attendance: result.rows, date: attendanceDate });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-// Mark attendance
-app.post('/api/admin/attendance/mark', (req, res) => {
+app.post('/api/admin/attendance/mark', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
-  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { student_id, date, status, check_in_time, check_out_time, notes } = req.body;
     
-    // Get admin id
-    db.query('SELECT id FROM admins WHERE user_id = ?', [decoded.id], (err, adminResult) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      
-      const marked_by = adminResult[0]?.id || null;
-      
-      db.query(
-        `INSERT INTO attendance (student_id, date, status, check_in_time, check_out_time, notes, marked_by) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE 
-         status = VALUES(status), 
-         check_in_time = VALUES(check_in_time), 
-         check_out_time = VALUES(check_out_time), 
-         notes = VALUES(notes), 
-         marked_by = VALUES(marked_by)`,
-        [student_id, date, status, check_in_time || null, check_out_time || null, notes || null, marked_by],
-        (err) => {
-          if (err) return res.status(500).json({ success: false, message: err.message });
-          res.json({ success: true, message: 'Attendance marked successfully' });
-        }
-      );
-    });
+    const adminResult = await pool.query('SELECT id FROM admins WHERE user_id = $1', [decoded.id]);
+    const marked_by = adminResult.rows[0]?.id || null;
+    
+    await pool.query(
+      `INSERT INTO attendance (student_id, date, status, check_in_time, check_out_time, notes, marked_by) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (student_id, date) DO UPDATE 
+       SET status = EXCLUDED.status, 
+           check_in_time = EXCLUDED.check_in_time, 
+           check_out_time = EXCLUDED.check_out_time, 
+           notes = EXCLUDED.notes, 
+           marked_by = EXCLUDED.marked_by`,
+      [student_id, date, status, check_in_time || null, check_out_time || null, notes || null, marked_by]
+    );
+    res.json({ success: true, message: 'Attendance marked successfully' });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
 
-// Get attendance summary (statistics)
-app.get('/api/admin/attendance/summary', (req, res) => {
+app.get('/api/admin/attendance/summary', async (req, res) => {
   const { month, year } = req.query;
   const currentDate = new Date();
   const targetMonth = month || currentDate.getMonth() + 1;
   const targetYear = year || currentDate.getFullYear();
-  
-  db.query(`
-    SELECT 
-      s.id, s.student_id, s.first_name, s.last_name,
-      COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_days,
-      COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
-      COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
-      COUNT(CASE WHEN a.status = 'excused' THEN 1 END) as excused_days,
-      COUNT(a.id) as total_days
-    FROM students s
-    LEFT JOIN attendance a ON s.id = a.student_id AND MONTH(a.date) = ? AND YEAR(a.date) = ?
-    WHERE s.status = 'active'
-    GROUP BY s.id
-    ORDER BY s.first_name ASC
-  `, [targetMonth, targetYear], (err, results) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    res.json({ success: true, summary: results, month: targetMonth, year: targetYear });
-  });
+  try {
+    const result = await pool.query(`
+      SELECT 
+        s.id, s.student_id, s.first_name, s.last_name,
+        COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_days,
+        COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
+        COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
+        COUNT(CASE WHEN a.status = 'excused' THEN 1 END) as excused_days,
+        COUNT(a.id) as total_days
+      FROM students s
+      LEFT JOIN attendance a ON s.id = a.student_id AND EXTRACT(MONTH FROM a.date) = $1 AND EXTRACT(YEAR FROM a.date) = $2
+      WHERE s.status = 'active'
+      GROUP BY s.id, s.student_id, s.first_name, s.last_name
+      ORDER BY s.first_name ASC
+    `, [targetMonth, targetYear]);
+    res.json({ success: true, summary: result.rows, month: targetMonth, year: targetYear });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-// Get student's own attendance
-app.get('/api/student/my-attendance', (req, res) => {
+app.get('/api/student/my-attendance', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ success: false });
-  
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    db.query(`
-      SELECT a.*, DATE_FORMAT(a.date, '%Y-%m-%d') as attendance_date
+    const result = await pool.query(`
+      SELECT a.*, TO_CHAR(a.date, 'YYYY-MM-DD') as attendance_date
       FROM attendance a
       JOIN students s ON a.student_id = s.id
-      WHERE s.user_id = ?
+      WHERE s.user_id = $1
       ORDER BY a.date DESC
       LIMIT 30
-    `, [decoded.id], (err, results) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
-      
-      // Calculate statistics
-      const present = results.filter(r => r.status === 'present').length;
-      const absent = results.filter(r => r.status === 'absent').length;
-      const late = results.filter(r => r.status === 'late').length;
-      const total = results.length;
-      const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
-      
-      res.json({ 
-        success: true, 
-        attendance: results,
-        stats: { present, absent, late, total, percentage }
-      });
+    `, [decoded.id]);
+    
+    const present = result.rows.filter(r => r.status === 'present').length;
+    const absent = result.rows.filter(r => r.status === 'absent').length;
+    const late = result.rows.filter(r => r.status === 'late').length;
+    const total = result.rows.length;
+    const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
+    
+    res.json({ 
+      success: true, 
+      attendance: result.rows,
+      stats: { present, absent, late, total, percentage }
     });
   } catch (error) {
     res.status(401).json({ success: false });
   }
 });
-// ========== BULK STUDENT IMPORT ==========
-const XLSX = require('xlsx');
 
-// Upload and process Excel/CSV file
+// ========== BULK STUDENT IMPORT ==========
 const uploadExcel = multer({ storage: multer.memoryStorage() });
 
 app.post('/api/admin/students/bulk-import', uploadExcel.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded' });
   }
-  
   try {
-    // Parse Excel file
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
@@ -1543,37 +1453,30 @@ app.post('/api/admin/students/bulk-import', uploadExcel.single('file'), async (r
     
     for (const row of data) {
       try {
-        // Check required fields
         if (!row.email || !row.password || !row.firstName || !row.lastName || !row.studentId) {
           errors.push(`Missing required fields for row: ${JSON.stringify(row)}`);
           errorCount++;
           continue;
         }
         
-        // Check if user exists
-        const [existing] = await db.promise().query('SELECT id FROM users WHERE email = ?', [row.email]);
-        if (existing.length > 0) {
+        const existing = await pool.query('SELECT id FROM users WHERE email = $1', [row.email]);
+        if (existing.rows.length > 0) {
           errors.push(`Email ${row.email} already exists`);
           errorCount++;
           continue;
         }
         
-        // Hash password
         const hashedPassword = await bcrypt.hash(row.password, 10);
-        
-        // Create user
-        const [userResult] = await db.promise().query(
-          'INSERT INTO users (email, password, role) VALUES (?, ?, ?)',
+        const userResult = await pool.query(
+          'INSERT INTO users (email, password, role) VALUES ($1, $2, $3) RETURNING id',
           [row.email, hashedPassword, 'student']
         );
         
-        // Create student
-        await db.promise().query(
+        await pool.query(
           `INSERT INTO students (user_id, student_id, first_name, last_name, email, phone, major, year, gender, status) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
-          [userResult.insertId, row.studentId, row.firstName, row.lastName, row.email, row.phone || null, row.major || null, row.year || null, row.gender || null]
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')`,
+          [userResult.rows[0].id, row.studentId, row.firstName, row.lastName, row.email, row.phone || null, row.major || null, row.year || null, row.gender || null]
         );
-        
         successCount++;
       } catch (error) {
         errors.push(`Error importing ${row.email}: ${error.message}`);
@@ -1586,7 +1489,7 @@ app.post('/api/admin/students/bulk-import', uploadExcel.single('file'), async (r
       message: `Import completed: ${successCount} students added, ${errorCount} failed`,
       successCount,
       errorCount,
-      errors: errors.slice(0, 10) // Return first 10 errors
+      errors: errors.slice(0, 10)
     });
   } catch (error) {
     console.error('Import error:', error);
@@ -1594,7 +1497,6 @@ app.post('/api/admin/students/bulk-import', uploadExcel.single('file'), async (r
   }
 });
 
-// Download sample template
 app.get('/api/admin/students/template', (req, res) => {
   const template = [
     { email: 'student1@university.edu', password: 'password123', firstName: 'John', lastName: 'Doe', studentId: 'STU001', phone: '555-0101', major: 'Computer Science', year: '1', gender: 'male' },
@@ -1609,6 +1511,34 @@ app.get('/api/admin/students/template', (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename=student_template.xlsx');
   res.send(buffer);
+});
+// ========== ADMIN PROFILE ROUTES ==========
+app.get('/api/admin/profile/details', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'No token provided' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('Fetching admin profile for user_id:', decoded.id);
+    
+    const result = await pool.query(`
+      SELECT a.*, u.email 
+      FROM admins a 
+      JOIN users u ON a.user_id = u.id 
+      WHERE a.user_id = $1
+    `, [decoded.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+    
+    res.json({ success: true, profile: result.rows[0] });
+  } catch (error) {
+    console.error('Admin profile error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
 
 // Serve static files for uploads

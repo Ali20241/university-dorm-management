@@ -22,10 +22,10 @@ const SwapRequest = () => {
     try {
       const token = localStorage.getItem('token');
       const [studentsRes, requestsRes] = await Promise.all([
-        axios.get('http://localhost:5000/api/students/all', {
+        axios.get('http://localhost:5001/api/students/all', {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get('http://localhost:5000/api/student/my-swap-requests', {
+        axios.get('http://localhost:5001/api/student/my-swap-requests', {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
@@ -42,7 +42,7 @@ const SwapRequest = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/api/student/swap-request', formData, {
+      await axios.post('http://localhost:5001/api/student/swap-request', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Swap request sent!' });
@@ -59,7 +59,7 @@ const SwapRequest = () => {
   const handleRespond = async (id, action) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/student/swap-request/${id}/respond`, 
+      await axios.put(`http://localhost:5001/api/student/swap-request/${id}/respond`, 
         { action },
         { headers: { Authorization: `Bearer ${token}` } }
       );

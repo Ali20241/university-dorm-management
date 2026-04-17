@@ -14,7 +14,7 @@ const Maintenance = () => {
   const fetchRequests = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/maintenance', {
+      const response = await axios.get('http://localhost:5001/api/admin/maintenance', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRequests(response.data.requests);
@@ -27,7 +27,7 @@ const Maintenance = () => {
 
   const updateStatus = async (id, status) => {
     const token = localStorage.getItem('token');
-    await axios.put(`http://localhost:5000/api/admin/maintenance/${id}/status`, { status }, {
+    await axios.put(`http://localhost:5001/api/admin/maintenance/${id}/status`, { status }, {
       headers: { Authorization: `Bearer ${token}` }
     });
     fetchRequests();

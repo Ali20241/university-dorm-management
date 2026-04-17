@@ -16,7 +16,7 @@ const RoomAssignmentsReport = () => {
   const fetchAssignments = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/reports/assignments', {
+      const response = await axios.get('http://localhost:5001/api/admin/reports/assignments', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAssignments(response.data.assignments);

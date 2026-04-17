@@ -18,7 +18,7 @@ const BulkImport = () => {
   const handleDownloadTemplate = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/students/template', {
+      const response = await axios.get('http://localhost:5001/api/admin/students/template', {
         headers: { Authorization: `Bearer ${token}` },
         responseType: 'blob'
       });
@@ -47,7 +47,7 @@ const BulkImport = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post('http://localhost:5000/api/admin/students/bulk-import', formData, {
+      const response = await axios.post('http://localhost:5001/api/admin/students/bulk-import', formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
