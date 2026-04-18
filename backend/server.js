@@ -938,7 +938,7 @@ app.get('/api/admin/reports/maintenance', async (req, res) => {
   }
 });
 // Get admin profile details
-app.get('/api/admin/profile/details', async (req, res) => {
+app.get('/api/admin/profile/details', (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) {
     return res.status(401).json({ success: false, message: 'No token provided' });
@@ -946,20 +946,18 @@ app.get('/api/admin/profile/details', async (req, res) => {
   
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const result = await pool.query(`
-      SELECT a.*, u.email 
-      FROM admins a 
-      JOIN users u ON a.user_id = u.id 
-      WHERE a.user_id = $1
-    `, [decoded.id]);
     
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Admin not found' });
-    }
-    
-    res.json({ success: true, profile: result.rows[0] });
+    pool.query('SELECT a.*, u.email FROM admins a JOIN users u ON a.user_id = u.id WHERE a.user_id = $1', [decoded.id], (err, result) => {
+      if (err) {
+        console.error('Admin profile error:', err);
+        return res.status(500).json({ success: false, message: err.message });
+      }
+      if (result.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Admin not found' });
+      }
+      res.json({ success: true, profile: result.rows[0] });
+    });
   } catch (error) {
-    console.error('Admin profile error:', error);
     res.status(401).json({ success: false, message: 'Invalid token' });
   }
 });
@@ -1539,6 +1537,61 @@ app.get('/api/admin/profile/details', async (req, res) => {
     console.error('Admin profile error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
+});
+// Approve application
+app.put('/api/admin/applications/:id/approve', (req, res) => {
+  const { id } = req.params;
+  
+  pool.query('SELECT student_id, room_id FROM applications WHERE id = $1', [id], (err, appResult) => {
+    if (err) {
+      console.error('Error fetching application:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+    if (appResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+    
+    const { student_id, room_id } = appResult.rows[0];
+    
+    // Get student email and room number
+    pool.query('SELECT s.email, s.first_name, r.room_number FROM students s JOIN rooms r ON r.id = $1 WHERE s.id = $2', [room_id, student_id], async (err, studentData) => {
+      if (err) {
+        console.error('Error fetching student data:', err);
+        return res.status(500).json({ success: false, message: err.message });
+      }
+      
+      // Update application status
+      pool.query('UPDATE applications SET status = $1, reviewed_date = NOW() WHERE id = $2', ['approved', id], (err) => {
+        if (err) {
+          console.error('Error updating application:', err);
+          return res.status(500).json({ success: false, message: err.message });
+        }
+        
+        // Create room assignment (using CURRENT_DATE instead of CURDATE)
+        pool.query('INSERT INTO room_assignments (student_id, room_id, assignment_date, status) VALUES ($1, $2, CURRENT_DATE, $3)', [student_id, room_id, 'active'], (err) => {
+          if (err) {
+            console.error('Error creating assignment:', err);
+            return res.status(500).json({ success: false, message: err.message });
+          }
+          
+          // Update room occupancy
+          pool.query('UPDATE rooms SET current_occupancy = current_occupancy + 1, room_status = CASE WHEN current_occupancy + 1 >= capacity THEN $1 ELSE $2 END WHERE id = $3', ['full', 'available', room_id], async (err) => {
+            if (err) {
+              console.error('Error updating room:', err);
+              return res.status(500).json({ success: false, message: err.message });
+            }
+            
+            // Send email notification
+            if (studentData.rows[0]?.email) {
+              await sendApprovalEmail(studentData.rows[0].email, studentData.rows[0].first_name, studentData.rows[0].room_number);
+            }
+            
+            res.json({ success: true, message: 'Application approved and room assigned' });
+          });
+        });
+      });
+    });
+  });
 });
 
 // Serve static files for uploads
