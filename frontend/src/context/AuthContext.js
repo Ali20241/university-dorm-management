@@ -9,6 +9,9 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Use environment variable for API URL
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
@@ -20,7 +23,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const response = await axios.post('http://localhost:5001/api/auth/login', {
+      const response = await axios.post(`${API_URL}/auth/login`, {
         email,
         password
       });
