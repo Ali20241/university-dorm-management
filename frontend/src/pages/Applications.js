@@ -42,7 +42,7 @@ const Applications = () => {
     }
   };
 
- const handleReject = async (id) => {
+const handleReject = async (id) => {
   const reason = prompt('Reason for rejection:');
   if (reason) {
     try {
@@ -60,7 +60,6 @@ const Applications = () => {
     }
   }
 };
-
   const getStatusColor = (status) => {
     switch(status) {
       case 'pending': return '#ed8936';
