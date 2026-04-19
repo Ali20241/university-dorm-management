@@ -18,7 +18,6 @@ import MyAssignment from './pages/MyAssignment';
 import ManageRooms from './pages/ManageRooms';
 import Students from './pages/Students';
 import StudentDetails from './pages/StudentDetails';
-import Applications from './pages/Applications';
 import Maintenance from './pages/Maintenance';
 import Payments from './pages/Payments';
 import Penalties from './pages/Penalties';
@@ -63,9 +62,6 @@ function AppContent() {
         } />
         <Route path="/admin/students/:id" element={
           user?.role === 'admin' ? <StudentDetails /> : <Navigate to="/login" />
-        } />
-        <Route path="/admin/applications" element={
-          user?.role === 'admin' ? <Applications /> : <Navigate to="/login" />
         } />
         <Route path="/admin/maintenance" element={
           user?.role === 'admin' ? <Maintenance /> : <Navigate to="/login" />
