@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';  // Use the api service instead of direct axios
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -26,7 +26,7 @@ const Penalties = () => {
   const fetchPenalties = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/penalties', {
+      const response = await api.get('/admin/penalties', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPenalties(response.data.penalties);
@@ -40,7 +40,7 @@ const Penalties = () => {
   const fetchStudents = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/students', {
+      const response = await api.get('/admin/students', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudents(response.data.students);
@@ -53,7 +53,7 @@ const Penalties = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/admin/penalties', formData, {
+      await api.post('/admin/penalties', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Penalty issued successfully!' });
@@ -70,7 +70,7 @@ const Penalties = () => {
   const markAsPaid = async (id) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5001/api/admin/penalties/${id}`, 
+      await api.put(`/admin/penalties/${id}`, 
         { status: 'paid', payment_date: new Date().toISOString().split('T')[0] },
         { headers: { Authorization: `Bearer ${token}` } }
       );

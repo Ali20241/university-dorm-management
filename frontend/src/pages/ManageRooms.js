@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -35,7 +36,7 @@ const ManageRooms = () => {
   const fetchRooms = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/rooms', {
+      const response = await api.get('/rooms', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRooms(response.data.rooms);
@@ -80,12 +81,12 @@ const ManageRooms = () => {
     
     try {
       if (editingRoom) {
-        await axios.put(`http://localhost:5001/api/admin/rooms/${editingRoom.id}`, formData, {
+    await api.put(`/admin/rooms/${editingRoom.id}`, formData, {
           headers: { Authorization: `Bearer ${token}` }
         });
         showToast('Room updated successfully!', 'success');
       } else {
-        await axios.post('http://localhost:5001/api/admin/rooms', formData, {
+        await api.post('/admin/rooms', formData, {
           headers: { Authorization: `Bearer ${token}` }
         });
         showToast('Room created successfully!', 'success');
@@ -97,20 +98,20 @@ const ManageRooms = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this room? This action cannot be undone.')) {
-      const token = localStorage.getItem('token');
-      try {
-        await axios.delete(`http://localhost:5001/api/admin/rooms/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchRooms();
-        showToast('Room deleted successfully!', 'success');
-      } catch (error) {
-        showToast(error.response?.data?.message || 'Delete failed', 'error');
-      }
+ const handleDelete = async (id) => {
+  if (window.confirm('Are you sure you want to delete this room? This action cannot be undone.')) {
+    const token = localStorage.getItem('token');
+    try {
+      await api.delete(`/admin/rooms/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchRooms();
+      showToast('Room deleted successfully!', 'success');
+    } catch (error) {
+      showToast(error.response?.data?.message || 'Delete failed', 'error');
     }
-  };
+  }
+};
 
   const handleEdit = (room) => {
     setEditingRoom(room);

@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -33,7 +34,7 @@ const StudentDashboard = () => {
             
             // Fetch penalties
             const token = localStorage.getItem('token');
-            const penaltiesRes = await fetch('http://localhost:5001/api/student/penalties', {
+            const penaltiesRes = await api.get('/student/penalties', {
               headers: { Authorization: `Bearer ${token}` }
             });
             const penaltiesData = await penaltiesRes.json();

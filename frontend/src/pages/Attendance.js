@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -18,11 +18,8 @@ const Attendance = () => {
 
   const fetchAttendance = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`http://localhost:5001/api/admin/attendance?date=${selectedDate}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setAttendance(response.data.attendance);
+      const response = await api.get(`/admin/attendance?date=${selectedDate}`);
+      setAttendance(response.attendance);
     } catch (error) {
       console.error('Error:', error);
     }
@@ -30,11 +27,8 @@ const Attendance = () => {
 
   const fetchStudents = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/attendance/students', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setStudents(response.data.students);
+      const response = await api.get('/admin/attendance/students');
+      setStudents(response.students);
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -45,13 +39,10 @@ const Attendance = () => {
   const updateStatus = async (studentId, status) => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/admin/attendance/mark', {
+      await api.post('/admin/attendance/mark', {
         student_id: studentId,
         date: selectedDate,
         status: status
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       fetchAttendance();
       setMessage({ type: 'success', text: 'Attendance updated!' });
@@ -111,7 +102,6 @@ const Attendance = () => {
             </div>
           )}
 
-          {/* Date Selector and Summary */}
           <div style={{
             background: 'white',
             borderRadius: '16px',

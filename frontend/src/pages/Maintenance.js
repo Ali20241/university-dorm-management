@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -14,7 +15,7 @@ const Maintenance = () => {
   const fetchRequests = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/maintenance', {
+      const response = await api.get('/admin/maintenance', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRequests(response.data.requests);
@@ -27,7 +28,7 @@ const Maintenance = () => {
 
   const updateStatus = async (id, status) => {
     const token = localStorage.getItem('token');
-    await axios.put(`http://localhost:5001/api/admin/maintenance/${id}/status`, { status }, {
+   await api.put(`/admin/maintenance/${id}/status`, { status }, {
       headers: { Authorization: `Bearer ${token}` }
     });
     fetchRequests();

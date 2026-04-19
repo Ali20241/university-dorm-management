@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -18,7 +19,7 @@ const BulkImport = () => {
   const handleDownloadTemplate = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/students/template', {
+      const response = await api.get('/admin/students/template', {
         headers: { Authorization: `Bearer ${token}` },
         responseType: 'blob'
       });
@@ -47,7 +48,7 @@ const BulkImport = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post('http://localhost:5001/api/admin/students/bulk-import', formData, {
+      const response = await api.post('/admin/students/bulk-import', formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'

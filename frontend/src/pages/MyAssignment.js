@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -22,7 +23,7 @@ const MyAssignment = () => {
         return;
       }
       
-      const response = await axios.get('http://localhost:5001/api/student/assignment/details', {
+      const response = await api.get('/student/assignment/details', {
         headers: { Authorization: `Bearer ${token}` }
       });
       

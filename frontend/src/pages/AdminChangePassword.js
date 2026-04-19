@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -34,7 +35,7 @@ const AdminChangePassword = () => {
     
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.put('http://localhost:5001/api/admin/change-password', {
+      const response = await api.put('/admin/change-password', {
         current_password: formData.current_password,
         new_password: formData.new_password
       }, {

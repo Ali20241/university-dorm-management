@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -24,10 +25,10 @@ const StudentBooking = () => {
     try {
       const token = localStorage.getItem('token');
       const [roomsRes, bookingsRes] = await Promise.all([
-        axios.get('http://localhost:5001/api/rooms/available', {
+        api.get('/rooms/available', {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get('http://localhost:5001/api/student/my-bookings', {
+        api.get('/student/my-bookings', {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
@@ -44,7 +45,7 @@ const StudentBooking = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/student/book-room', formData, {
+      await api.post('/student/book-room', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Booking request submitted!' });
@@ -62,7 +63,7 @@ const StudentBooking = () => {
     if (window.confirm('Cancel this booking?')) {
       try {
         const token = localStorage.getItem('token');
-        await axios.put(`http://localhost:5001/api/student/cancel-booking/${id}`, {}, {
+        await api.put(`/student/cancel-booking/${id}`, {}, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setMessage({ type: 'success', text: 'Booking cancelled!' });

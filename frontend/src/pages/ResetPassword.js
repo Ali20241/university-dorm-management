@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
@@ -28,7 +29,7 @@ const ResetPassword = () => {
     setToken(resetToken);
     
     // Verify token
-    axios.post('http://localhost:5001/api/auth/verify-reset-token', { token: resetToken })
+    api.post('/auth/verify-reset-token', { token: resetToken })
       .then(response => {
         setValidToken(true);
         setVerifying(false);
@@ -56,7 +57,7 @@ const ResetPassword = () => {
     setMessage(null);
     
     try {
-      await axios.post('http://localhost:5001/api/auth/reset-password', {
+      await api.post('/auth/reset-password', {
         token,
         new_password: password
       });

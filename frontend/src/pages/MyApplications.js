@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -14,7 +15,7 @@ const MyApplications = () => {
   const fetchApplications = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/student/applications', {
+      const response = await api.get('/student/applications', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setApplications(response.data.applications);

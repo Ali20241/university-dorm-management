@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -16,7 +17,7 @@ const StudentNotifications = () => {
   const fetchPenalties = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/student/penalties', {
+      const response = await api.get('/student/penalties', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPenalties(response.data.penalties);

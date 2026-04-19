@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -21,22 +22,22 @@ const Reports = () => {
     
     try {
       if (activeTab === 'occupancy') {
-        const response = await axios.get('http://localhost:5001/api/admin/reports/occupancy', {
+        const response = await api.get('/admin/reports/occupancy', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setOccupancyReport(response.data.report);
       } else if (activeTab === 'payments') {
-        const response = await axios.get('http://localhost:5001/api/admin/reports/payments', {
+        const response = await api.get('/admin/reports/payments', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setPaymentReport(response.data.report);
       } else if (activeTab === 'penalties') {
-        const response = await axios.get('http://localhost:5001/api/admin/penalties', {
+        const response = await api.get('/admin/penalties', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setPenaltyReport(response.data.penalties);
       } else if (activeTab === 'maintenance') {
-        const response = await axios.get('http://localhost:5001/api/admin/reports/maintenance', {
+        const response = await api.get('/admin/reports/maintenance', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setMaintenanceReport(response.data.report);

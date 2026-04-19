@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -23,7 +24,7 @@ const AdminProfile = () => {
   const fetchAdminProfile = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/profile/details', {
+      const response = await api.get('/admin/profile/details', {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
@@ -52,7 +53,7 @@ const AdminProfile = () => {
     setUploading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post('http://localhost:5001/api/admin/upload-photo', formData, {
+      const response = await api.post('/admin/upload-photo', formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -75,7 +76,7 @@ const AdminProfile = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.put('http://localhost:5001/api/admin/profile', formData, {
+      await api.put('/admin/profile', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Profile updated!' });
@@ -163,7 +164,7 @@ const AdminProfile = () => {
                 overflow: 'hidden'
               }}>
                 {profile?.profile_image ? (
-                  <img src={`http://localhost:5001${profile.profile_image}`} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={`${profile.profile_image}`} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <span style={{ fontSize: '48px' }}>👤</span>
                 )}

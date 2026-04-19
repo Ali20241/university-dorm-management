@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -22,10 +23,10 @@ const SwapRequest = () => {
     try {
       const token = localStorage.getItem('token');
       const [studentsRes, requestsRes] = await Promise.all([
-        axios.get('http://localhost:5001/api/students/all', {
+        api.get('/students/all', {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get('http://localhost:5001/api/student/my-swap-requests', {
+        api.get('/student/my-swap-requests', {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
@@ -42,7 +43,7 @@ const SwapRequest = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/student/swap-request', formData, {
+      await api.post('/student/swap-request', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Swap request sent!' });
@@ -57,21 +58,20 @@ const SwapRequest = () => {
   };
 
   const handleRespond = async (id, action) => {
-    try {
-      const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5001/api/student/swap-request/${id}/respond`, 
-        { action },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setMessage({ type: 'success', text: `Request ${action}ed!` });
-      fetchData();
-      setTimeout(() => setMessage(null), 3000);
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to respond' });
-      setTimeout(() => setMessage(null), 3000);
-    }
-  };
-
+  try {
+    const token = localStorage.getItem('token');
+    await api.put(`/student/swap-request/${id}/respond`, 
+      { action },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    setMessage({ type: 'success', text: `Request ${action}ed!` });
+    fetchData();
+    setTimeout(() => setMessage(null), 3000);
+  } catch (error) {
+    setMessage({ type: 'error', text: 'Failed to respond' });
+    setTimeout(() => setMessage(null), 3000);
+  }
+};
   const getStatusColor = (status) => {
     switch(status) {
       case 'pending': return '#F59E0B';

@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -35,7 +36,7 @@ const Students = () => {
   const fetchStudents = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/students', {
+      const response = await api.get('/admin/students', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudents(response.data.students);
@@ -55,7 +56,7 @@ const Students = () => {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/auth/register', {
+      await api.post('/auth/register', {
         email: formData.email,
         password: formData.password,
         firstName: formData.firstName,
@@ -84,7 +85,7 @@ const Students = () => {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:5001/api/admin/students/${studentToDelete.id}/delete`, {
+      await api.delete(`/admin/students/${studentToDelete.id}/delete`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Student deleted successfully!' });
@@ -105,7 +106,7 @@ const Students = () => {
     }
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5001/api/admin/students/${selectedStudent.id}/change-password`, 
+      await api.put(`/admin/students/${selectedStudent.id}/change-password`, 
         { new_password: newPassword },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -225,8 +226,8 @@ const Students = () => {
                         <button onClick={() => handleViewDetails(s.id)} style={{ background: '#5B5CE2', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', marginRight: '6px', cursor: 'pointer', fontSize: '12px' }}>View</button>
                         <button onClick={() => { setSelectedStudent(s); setShowPasswordModal(true); }} style={{ background: '#F59E0B', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', marginRight: '6px', cursor: 'pointer', fontSize: '12px' }}>Reset PW</button>
                         <button onClick={() => { setStudentToDelete(s); setShowDeleteConfirm(true); }} style={{ background: '#EF4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>Delete</button>
-                      </td>
-                    </tr>
+                       </td>
+                     </tr>
                   ))}
                 </tbody>
               </table>

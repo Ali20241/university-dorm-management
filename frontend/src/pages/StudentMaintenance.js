@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -24,7 +25,7 @@ const StudentMaintenance = () => {
   const fetchRequests = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/student/maintenance', {
+      const response = await api.get('/student/maintenance', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRequests(response.data.requests);
@@ -38,7 +39,7 @@ const StudentMaintenance = () => {
   const fetchRooms = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/rooms', {
+      const response = await api.get('/rooms', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRooms(response.data.rooms);
@@ -51,7 +52,7 @@ const StudentMaintenance = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/student/maintenance', formData, {
+      await api.post('/student/maintenance', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Maintenance request submitted!' });

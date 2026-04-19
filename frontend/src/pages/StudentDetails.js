@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -25,16 +26,16 @@ const StudentDetails = () => {
     
     try {
       const [studentRes, paymentsRes, maintenanceRes, applicationsRes] = await Promise.all([
-        axios.get(`http://localhost:5001/api/admin/students/${id}/details`, {
+        api.get(`/admin/students/${id}/details`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get(`http://localhost:5001/api/admin/students/${id}/payments`, {
+        api.get(`/admin/students/${id}/payments`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get(`http://localhost:5001/api/admin/students/${id}/maintenance`, {
+        api.get(`/admin/students/${id}/maintenance`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get(`http://localhost:5001/api/admin/students/${id}/applications`, {
+        api.get(`/admin/students/${id}/applications`, {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
@@ -135,7 +136,7 @@ const StudentDetails = () => {
                   fontSize: '48px'
                 }}>
                   {student?.profile_image ? (
-                    <img src={`http://localhost:5001${student.profile_image}`} alt="Profile" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                    <img src={`${student.profile_image}`} alt="Profile" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
                   ) : (
                     '👤'
                   )}

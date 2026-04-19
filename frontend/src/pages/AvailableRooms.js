@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -19,7 +20,7 @@ const AvailableRooms = () => {
   const fetchRooms = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/rooms', {
+      const response = await api.get('/rooms', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRooms(response.data.rooms);
@@ -37,14 +38,14 @@ const AvailableRooms = () => {
     console.log('User from localStorage:', user);
     
     try {
-      const profileResponse = await axios.get('http://localhost:5001/api/student/profile', {
+      const profileResponse = await api.get('/student/profile', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       const studentId = profileResponse.data.student.id;
       console.log('Student ID from profile:', studentId);
       
-      const response = await axios.post('http://localhost:5001/api/student/apply', 
+      const response = await api.post('/student/apply', 
         { room_id: roomId, student_id: studentId },
         { headers: { Authorization: `Bearer ${token}` } }
       );

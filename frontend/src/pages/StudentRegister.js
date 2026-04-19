@@ -1,3 +1,4 @@
+import api from '../services/api';
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
@@ -39,7 +40,7 @@ const StudentRegister = () => {
     setLoading(true);
     
     try {
-      const response = await axios.post('http://localhost:5001/api/auth/register', {
+      const response = await api.post('/auth/register', {
         email: formData.email,
         password: formData.password,
         firstName: formData.firstName,
