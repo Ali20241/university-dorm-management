@@ -29,7 +29,7 @@ const Applications = () => {
   const handleApprove = async (id) => {
     try {
       const token = localStorage.getItem('token');
-      await api.put(`/admin/applications/${id}/approve`, {}, {
+      await api.put(`/admin/applications/${id}/reject`, { reason }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage({ type: 'success', text: 'Application approved!' });
