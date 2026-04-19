@@ -42,24 +42,24 @@ const Applications = () => {
     }
   };
 
-  const handleReject = async (id) => {
-    const reason = prompt('Reason for rejection:');
-    if (reason) {
-      try {
-        const token = localStorage.getItem('token');
-        await api.put(`/admin/applications/${id}/reject`, { reason }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setMessage({ type: 'success', text: 'Application rejected!' });
-        fetchApplications();
-        setTimeout(() => setMessage(null), 3000);
-      } catch (error) {
-        console.error('Reject error:', error);
-        setMessage({ type: 'error', text: 'Failed to reject' });
-        setTimeout(() => setMessage(null), 3000);
-      }
+ const handleReject = async (id) => {
+  const reason = prompt('Reason for rejection:');
+  if (reason) {
+    try {
+      const token = localStorage.getItem('token');
+      await api.put(`/admin/applications/${id}/reject`, { reason }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMessage({ type: 'success', text: 'Application rejected!' });
+      fetchApplications();
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      console.error('Reject error:', error);
+      setMessage({ type: 'error', text: 'Failed to reject' });
+      setTimeout(() => setMessage(null), 3000);
     }
-  };
+  }
+};
 
   const getStatusColor = (status) => {
     switch(status) {
