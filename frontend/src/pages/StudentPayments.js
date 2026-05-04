@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -19,12 +18,12 @@ const StudentPayments = () => {
       const response = await api.get('/student/payments', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setPayments(response.data.payments);
+      setPayments(response.payments || []);
       
       // Calculate summary
-      const paid = response.data.payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + parseFloat(p.amount), 0);
-      const pending = response.data.payments.filter(p => p.status === 'pending').reduce((sum, p) => sum + parseFloat(p.amount), 0);
-      const overdue = response.data.payments.filter(p => p.status === 'overdue').reduce((sum, p) => sum + parseFloat(p.amount), 0);
+      const paid = (response.payments || []).filter(p => p.status === 'paid').reduce((sum, p) => sum + parseFloat(p.amount), 0);
+      const pending = (response.payments || []).filter(p => p.status === 'pending').reduce((sum, p) => sum + parseFloat(p.amount), 0);
+      const overdue = (response.payments || []).filter(p => p.status === 'overdue').reduce((sum, p) => sum + parseFloat(p.amount), 0);
       setSummary({ totalPaid: paid, totalPending: pending, totalOverdue: overdue });
     } catch (error) {
       console.error('Error:', error);

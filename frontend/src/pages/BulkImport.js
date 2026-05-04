@@ -53,8 +53,8 @@ const BulkImport = () => {
           'Content-Type': 'multipart/form-data'
         }
       });
-      setResult(response.data);
-      setMessage({ type: 'success', text: response.data.message });
+      setResult(response);
+      setMessage({ type: 'success', text: response.message });
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Import failed' });
     } finally {

@@ -32,6 +32,7 @@ import SwapRequest from './pages/SwapRequest';
 import Attendance from './pages/Attendance';
 import BulkImport from './pages/BulkImport';
 import StudentBooking from './pages/StudentBooking';
+import Applications from './pages/Applications';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -89,6 +90,9 @@ function AppContent() {
         } />
         <Route path="/admin/bulk-import" element={
           user?.role === 'admin' ? <BulkImport /> : <Navigate to="/login" />
+        } />
+        <Route path="/admin/applications" element={
+          user?.role === 'admin' ? <Applications /> : <Navigate to="/login" />
         } />
         
         {/* Student routes */}

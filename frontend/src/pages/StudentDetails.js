@@ -1,7 +1,6 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -40,10 +39,10 @@ const StudentDetails = () => {
         })
       ]);
       
-      setStudent(studentRes.data.student);
-      setPayments(paymentsRes.data.payments);
-      setMaintenance(maintenanceRes.data.maintenance);
-      setApplications(applicationsRes.data.applications);
+      setStudent(studentRes.student);
+      setPayments(paymentsRes.payments || []);
+      setMaintenance(maintenanceRes.maintenance || []);
+      setApplications(applicationsRes.applications || []);
     } catch (error) {
       console.error('Error:', error);
       setMessage({ type: 'error', text: 'Failed to load student data' });

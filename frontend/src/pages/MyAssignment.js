@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -27,12 +26,12 @@ const MyAssignment = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      console.log('Assignment response:', response.data);
+      console.log('Assignment response:', response);
       
-      if (response.data.success) {
-        setAssignment(response.data.assignment);
+      if (response.success) {
+        setAssignment(response.assignment);
       } else {
-        setError(response.data.message || 'No assignment found');
+        setError(response.message || 'No assignment found');
       }
     } catch (error) {
       console.error('Error:', error);

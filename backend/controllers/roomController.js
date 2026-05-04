@@ -1,34 +1,28 @@
-const mysql = require('mysql2');
+const { pool } = require('../db');
 require('dotenv').config();
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
-
-const getAllRooms = (req, res) => {
-  db.query('SELECT * FROM rooms', (err, results) => {
-    if (err) {
-      res.status(500).json({ success: false, message: err.message });
-    } else {
-      res.json({ success: true, count: results.length, rooms: results });
-    }
-  });
+const getAllRooms = async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM rooms ORDER BY room_number');
+    res.json({ success: true, count: result.rows.length, rooms: result.rows });
+  } catch (err) {
+    console.error('getAllRooms error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const getRoomById = (req, res) => {
+const getRoomById = async (req, res) => {
   const { id } = req.params;
-  db.query('SELECT * FROM rooms WHERE id = ?', [id], (err, results) => {
-    if (err) {
-      res.status(500).json({ success: false, message: err.message });
-    } else if (results.length === 0) {
-      res.status(404).json({ success: false, message: 'Room not found' });
-    } else {
-      res.json({ success: true, room: results[0] });
+  try {
+    const result = await pool.query('SELECT * FROM rooms WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Room not found' });
     }
-  });
+    res.json({ success: true, room: result.rows[0] });
+  } catch (err) {
+    console.error('getRoomById error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 module.exports = { getAllRooms, getRoomById };

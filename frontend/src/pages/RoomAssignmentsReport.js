@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -20,7 +19,7 @@ const RoomAssignmentsReport = () => {
       const response = await api.get('/admin/reports/assignments', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setAssignments(response.data.assignments);
+      setAssignments(response.assignments || []);
     } catch (error) {
       console.error('Error:', error);
     } finally {

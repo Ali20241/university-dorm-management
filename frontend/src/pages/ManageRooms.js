@@ -1,470 +1,230 @@
-import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import RoomCard from '../components/RoomCard';
-import { exportRoomsToPDF } from '../utils/pdfExport';
 
 const ManageRooms = () => {
   const [rooms, setRooms] = useState([]);
-  const [filteredRooms, setFilteredRooms] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingRoom, setEditingRoom] = useState(null);
+  const [editRoom, setEditRoom] = useState(null);
   const [message, setMessage] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterBuilding, setFilterBuilding] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [formData, setFormData] = useState({
-    room_number: '',
-    floor: '',
-    building: '',
-    room_type: 'dormitory',
-    capacity: '6',
-    description: ''
-  });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [buildingFilter, setBuildingFilter] = useState('all');
+  const [formData, setFormData] = useState({ room_number: '', floor: '', building: '', room_type: 'dormitory', capacity: 6, description: '', room_status: 'available' });
+
+  useEffect(() => { fetchRooms(); }, []);
 
   useEffect(() => {
-    fetchRooms();
-  }, []);
+    let res = rooms;
+    if (search) res = res.filter(r => r.room_number?.toLowerCase().includes(search.toLowerCase()) || r.building?.toLowerCase().includes(search.toLowerCase()));
+    if (statusFilter !== 'all') res = res.filter(r => r.room_status === statusFilter);
+    if (buildingFilter !== 'all') res = res.filter(r => r.building === buildingFilter);
+    setFiltered(res);
+  }, [search, statusFilter, buildingFilter, rooms]);
 
-  useEffect(() => {
-    filterRooms();
-  }, [searchTerm, filterBuilding, filterStatus, rooms]);
+  const buildings = [...new Set(rooms.map(r => r.building).filter(Boolean))].sort();
 
   const fetchRooms = async () => {
+    setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await api.get('/rooms', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setRooms(response.data.rooms);
-      setFilteredRooms(response.data.rooms);
-    } catch (error) {
-      console.error('Error:', error);
-      showToast('Failed to load rooms', 'error');
-    } finally {
-      setLoading(false);
-    }
+      const res = await api.get('/rooms', { headers: { Authorization: `Bearer ${token}` } });
+      setRooms(res.rooms || []);
+    } catch (e) { showMsg('error', 'Failed to load rooms'); }
+    finally { setLoading(false); }
   };
 
-  const filterRooms = () => {
-    let filtered = [...rooms];
-    
-    if (searchTerm) {
-      filtered = filtered.filter(room => 
-        room.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        room.building.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    if (filterBuilding !== 'all') {
-      filtered = filtered.filter(room => room.building === filterBuilding);
-    }
-    
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter(room => room.room_status === filterStatus);
-    }
-    
-    setFilteredRooms(filtered);
-  };
-
-  const showToast = (msg, type = 'success') => {
-    setMessage({ type, text: msg });
-    setTimeout(() => setMessage(null), 3000);
-  };
+  const showMsg = (type, text) => { setMessage({ type, text }); setTimeout(() => setMessage(null), 4000); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
-    
     try {
-      if (editingRoom) {
-    await api.put(`/admin/rooms/${editingRoom.id}`, formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        showToast('Room updated successfully!', 'success');
+      const token = localStorage.getItem('token');
+      if (editRoom) {
+        await api.put(`/admin/rooms/${editRoom.id}`, formData, { headers: { Authorization: `Bearer ${token}` } });
+        showMsg('success', 'Room updated successfully!');
       } else {
-        await api.post('/admin/rooms', formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        showToast('Room created successfully!', 'success');
+        await api.post('/admin/rooms', formData, { headers: { Authorization: `Bearer ${token}` } });
+        showMsg('success', 'Room created successfully!');
       }
+      setShowModal(false);
+      setEditRoom(null);
+      setFormData({ room_number: '', floor: '', building: '', room_type: 'dormitory', capacity: 6, description: '', room_status: 'available' });
       fetchRooms();
-      closeModal();
-    } catch (error) {
-      showToast(error.response?.data?.message || 'Operation failed', 'error');
-    }
+    } catch (e) { showMsg('error', e.response?.data?.message || 'Operation failed'); }
   };
-
- const handleDelete = async (id) => {
-  if (window.confirm('Are you sure you want to delete this room? This action cannot be undone.')) {
-    const token = localStorage.getItem('token');
-    try {
-      await api.delete(`/admin/rooms/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      fetchRooms();
-      showToast('Room deleted successfully!', 'success');
-    } catch (error) {
-      showToast(error.response?.data?.message || 'Delete failed', 'error');
-    }
-  }
-};
 
   const handleEdit = (room) => {
-    setEditingRoom(room);
-    setFormData({
-      room_number: room.room_number,
-      floor: room.floor,
-      building: room.building,
-      room_type: room.room_type,
-      capacity: room.capacity,
-      description: room.description || ''
-    });
+    setEditRoom(room);
+    setFormData({ room_number: room.room_number, floor: room.floor, building: room.building, room_type: room.room_type, capacity: room.capacity, description: room.description || '', room_status: room.room_status });
     setShowModal(true);
   };
 
-  const openModal = () => {
-    setEditingRoom(null);
-    setFormData({ room_number: '', floor: '', building: '', room_type: 'dormitory', capacity: '6', description: '' });
-    setShowModal(true);
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this room? This cannot be undone.')) return;
+    try {
+      const token = localStorage.getItem('token');
+      await api.delete(`/admin/rooms/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      showMsg('success', 'Room deleted!');
+      fetchRooms();
+    } catch (e) { showMsg('error', 'Failed to delete room'); }
   };
 
-  const closeModal = () => {
-    setShowModal(false);
-    setEditingRoom(null);
+  const stats = {
+    total: rooms.length,
+    available: rooms.filter(r => r.room_status === 'available').length,
+    full: rooms.filter(r => r.room_status === 'full').length,
+    occupancyPct: rooms.length > 0 ? Math.round((rooms.filter(r => r.room_status === 'full').length / rooms.length) * 100) : 0,
   };
 
-  const buildings = ['all', ...new Set(rooms.map(r => r.building))];
-  const statuses = ['all', 'available', 'full', 'maintenance'];
-
-  const totalRooms = rooms.length;
-  const availableRooms = rooms.filter(r => r.room_status === 'available').length;
-  const fullRooms = rooms.filter(r => r.room_status === 'full').length;
-  const totalBeds = rooms.reduce((sum, r) => sum + r.capacity, 0);
-  const occupiedBeds = rooms.reduce((sum, r) => sum + r.current_occupancy, 0);
+  const inputStyle = { width: '100%', padding: '10px 12px', border: '1.5px solid #e5e7eb', borderRadius: '8px', fontSize: '13px', outline: 'none', background: '#fafafa', fontFamily: 'Inter, sans-serif' };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f0f2f5' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f0f4f8' }}>
       <Navbar />
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar role="admin" />
-        <main style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
-          
-          {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+        <main style={{ flex: 1, padding: '28px', overflowY: 'auto', height: 'calc(100vh - 64px)' }}>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '14px' }}>
             <div>
-              <h1 style={{ fontSize: '24px', color: '#1a1a2e', marginBottom: '4px' }}>🏠 Room Management</h1>
-              <p style={{ color: '#718096', fontSize: '13px' }}>Manage dormitory rooms in a visual grid layout</p>
+              <h1 style={{ fontSize: '24px', fontWeight: '800', color: '#1a1a2e', marginBottom: '4px' }}>🏠 Manage Rooms</h1>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>Add, edit, and manage all dormitory rooms</p>
             </div>
-            <button 
-              onClick={openModal}
-              style={{
-                background: '#2196f3',
-                color: 'white',
-                border: 'none',
-                padding: '10px 20px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '13px',
-                fontWeight: '500'
-              }}
-            >
-              + Add New Room
+            <button onClick={() => { setEditRoom(null); setFormData({ room_number: '', floor: '', building: '', room_type: 'dormitory', capacity: 6, description: '', room_status: 'available' }); setShowModal(true); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #5B5CE2, #7C3AED)', color: 'white', border: 'none', borderRadius: '12px', padding: '11px 20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 4px 12px rgba(91,92,226,0.3)' }}>
+              <span>+</span> Add Room
             </button>
-            <button onClick={() => exportRoomsToPDF(rooms)} style={{
-  background: '#EF4444',
-  color: 'white',
-  border: 'none',
-  padding: '10px 20px',
-  borderRadius: '8px',
-  cursor: 'pointer'
-}}>
-  📄 Export PDF
-</button>
           </div>
 
-          {/* Toast Message */}
           {message && (
-            <div style={{
-              position: 'fixed',
-              top: '80px',
-              right: '20px',
-              background: message.type === 'success' ? '#48bb78' : '#f56565',
-              color: 'white',
-              padding: '10px 18px',
-              borderRadius: '8px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              zIndex: 1000,
-              fontSize: '13px',
-              animation: 'slideIn 0.3s ease'
-            }}>
-              {message.text}
+            <div style={{ padding: '12px 16px', borderRadius: '10px', marginBottom: '18px', fontSize: '13px', fontWeight: '500', background: message.type === 'success' ? '#d1fae5' : '#fee2e2', color: message.type === 'success' ? '#065f46' : '#991b1b', border: `1px solid ${message.type === 'success' ? '#a7f3d0' : '#fecaca'}`, display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {message.type === 'success' ? '✅' : '⚠️'} {message.text}
             </div>
           )}
 
-          {/* Compact Statistics Cards */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-            gap: '12px',
-            marginBottom: '20px'
-          }}>
-            <div style={{ background: 'white', borderRadius: '10px', padding: '10px', textAlign: 'center' }}>
-              <p style={{ color: '#667eea', fontSize: '11px', margin: 0 }}>Total Rooms</p>
-              <h2 style={{ fontSize: '22px', color: '#1a1a2e', margin: '5px 0 0' }}>{totalRooms}</h2>
-            </div>
-            <div style={{ background: 'white', borderRadius: '10px', padding: '10px', textAlign: 'center' }}>
-              <p style={{ color: '#48bb78', fontSize: '11px', margin: 0 }}>Available</p>
-              <h2 style={{ fontSize: '22px', color: '#48bb78', margin: '5px 0 0' }}>{availableRooms}</h2>
-            </div>
-            <div style={{ background: 'white', borderRadius: '10px', padding: '10px', textAlign: 'center' }}>
-              <p style={{ color: '#f56565', fontSize: '11px', margin: 0 }}>Full</p>
-              <h2 style={{ fontSize: '22px', color: '#f56565', margin: '5px 0 0' }}>{fullRooms}</h2>
-            </div>
-            <div style={{ background: 'white', borderRadius: '10px', padding: '10px', textAlign: 'center' }}>
-              <p style={{ color: '#ed8936', fontSize: '11px', margin: 0 }}>Occupancy</p>
-              <h2 style={{ fontSize: '22px', color: '#ed8936', margin: '5px 0 0' }}>{totalBeds ? Math.round((occupiedBeds / totalBeds) * 100) : 0}%</h2>
-            </div>
+          {/* Stats */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+            {[
+              { label: 'Total Rooms', value: stats.total, icon: '🏠', color: '#5B5CE2', bg: '#eef0ff' },
+              { label: 'Available', value: stats.available, icon: '✅', color: '#10b981', bg: '#d1fae5' },
+              { label: 'Full', value: stats.full, icon: '🔴', color: '#ef4444', bg: '#fee2e2' },
+              { label: 'Occupancy', value: `${stats.occupancyPct}%`, icon: '📊', color: '#f59e0b', bg: '#fef3c7' },
+            ].map((c, i) => (
+              <div key={i} style={{ background: 'white', borderRadius: '14px', padding: '16px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '44px', height: '44px', background: c.bg, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>{c.icon}</div>
+                <div>
+                  <p style={{ fontSize: '22px', fontWeight: '800', color: c.color }}>{c.value}</p>
+                  <p style={{ fontSize: '11px', color: '#6b7280', fontWeight: '500' }}>{c.label}</p>
+                </div>
+              </div>
+            ))}
           </div>
 
-          {/* Compact Filters */}
-          <div style={{
-            background: 'white',
-            borderRadius: '10px',
-            padding: '12px',
-            marginBottom: '20px',
-            display: 'flex',
-            gap: '10px',
-            flexWrap: 'wrap',
-            alignItems: 'center'
-          }}>
-            <div style={{ flex: 2, minWidth: '180px' }}>
-              <input
-                type="text"
-                placeholder="🔍 Search room or building..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  fontSize: '13px'
-                }}
-              />
+          {/* Filters */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
+              <input placeholder="Search rooms..." value={search} onChange={e => setSearch(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e5e7eb', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white' }}
+                onFocus={e => e.target.style.borderColor = '#5B5CE2'} onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
             </div>
-            <select
-              value={filterBuilding}
-              onChange={(e) => setFilterBuilding(e.target.value)}
-              style={{ padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', background: 'white', fontSize: '13px' }}
-            >
-              {buildings.map(b => (
-                <option key={b} value={b}>{b === 'all' ? 'All Buildings' : `Building ${b}`}</option>
-              ))}
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '10px 14px', border: '1.5px solid #e5e7eb', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', cursor: 'pointer' }}>
+              <option value="all">All Status</option>
+              <option value="available">Available</option>
+              <option value="full">Full</option>
+              <option value="maintenance">Maintenance</option>
             </select>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              style={{ padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', background: 'white', fontSize: '13px' }}
-            >
-              {statuses.map(s => (
-                <option key={s} value={s}>{s === 'all' ? 'All Status' : s.charAt(0).toUpperCase() + s.slice(1)}</option>
-              ))}
+            <select value={buildingFilter} onChange={e => setBuildingFilter(e.target.value)} style={{ padding: '10px 14px', border: '1.5px solid #e5e7eb', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', cursor: 'pointer' }}>
+              <option value="all">All Buildings</option>
+              {buildings.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
-            {(searchTerm || filterBuilding !== 'all' || filterStatus !== 'all') && (
-              <button
-                onClick={() => { setSearchTerm(''); setFilterBuilding('all'); setFilterStatus('all'); }}
-                style={{ padding: '8px 16px', background: '#e2e8f0', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}
-              >
-                Clear
-              </button>
-            )}
           </div>
 
-          {/* Compact Rooms Grid - 240px cards */}
+          <p style={{ fontSize: '13px', color: '#9ca3af', marginBottom: '16px' }}>Showing {filtered.length} of {rooms.length} rooms</p>
+
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px', background: 'white', borderRadius: '12px' }}>
-              <div style={{ width: '30px', height: '30px', border: '3px solid #e2e8f0', borderTopColor: '#667eea', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 1s linear infinite' }} />
-              Loading rooms...
-            </div>
-          ) : filteredRooms.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', background: 'white', borderRadius: '12px' }}>
-              <p>No rooms found matching your criteria.</p>
+            <div style={{ textAlign: 'center', padding: '60px', background: 'white', borderRadius: '20px' }}>
+              <div style={{ width: '36px', height: '36px', border: '3px solid #e2e8f0', borderTopColor: '#5B5CE2', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+              <p style={{ color: '#6b7280' }}>Loading rooms...</p>
             </div>
           ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-              gap: '15px'
-            }}>
-              {filteredRooms.map(room => (
-                <RoomCard
-                  key={room.id}
-                  room={room}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  isAdmin={true}
-                />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '18px' }}>
+              {filtered.map(room => (
+                <RoomCard key={room.id} room={room} isAdmin onEdit={handleEdit} onDelete={handleDelete} />
               ))}
-            </div>
-          )}
-
-          {/* Modal for Add/Edit Room */}
-          {showModal && (
-            <div style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0,0,0,0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000,
-              animation: 'fadeIn 0.2s ease'
-            }}>
-              <div style={{
-                background: 'white',
-                borderRadius: '16px',
-                width: '450px',
-                maxWidth: '90%',
-                maxHeight: '85%',
-                overflow: 'auto',
-                animation: 'scaleIn 0.2s ease'
-              }}>
-                <div style={{
-                  padding: '16px 20px',
-                  borderBottom: '1px solid #e2e8f0',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <h2 style={{ margin: 0, fontSize: '18px' }}>{editingRoom ? 'Edit Room' : 'Add New Room'}</h2>
-                  <button onClick={closeModal} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer' }}>×</button>
+              {filtered.length === 0 && (
+                <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px', background: 'white', borderRadius: '20px', color: '#9ca3af' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '12px' }}>🏠</div>
+                  <p style={{ fontSize: '16px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>No rooms found</p>
+                  <p style={{ fontSize: '13px' }}>Try adjusting your filters or add a new room</p>
                 </div>
-                
-                <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
-                  <div style={{ display: 'grid', gap: '12px' }}>
-                    <input
-                      type="text"
-                      placeholder="Room Number (e.g., A101)"
-                      value={formData.room_number}
-                      onChange={(e) => setFormData({...formData, room_number: e.target.value})}
-                      required
-                      style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
-                    />
-                    <input
-                      type="number"
-                      placeholder="Floor"
-                      value={formData.floor}
-                      onChange={(e) => setFormData({...formData, floor: e.target.value})}
-                      required
-                      style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Building"
-                      value={formData.building}
-                      onChange={(e) => setFormData({...formData, building: e.target.value})}
-                      required
-                      style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
-                    />
-                    <select
-                      value={formData.room_type}
-                      onChange={(e) => setFormData({...formData, room_type: e.target.value})}
-                      style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
-                    >
-                      <option value="single">Single (1 student)</option>
-                      <option value="double">Double (2 students)</option>
-                      <option value="triple">Triple (3 students)</option>
-                      <option value="quad">Quad (4 students)</option>
-                      <option value="dormitory">Dormitory (6 students)</option>
-                    </select>
-                    <input
-                      type="number"
-                      placeholder="Capacity"
-                      value={formData.capacity}
-                      onChange={(e) => setFormData({...formData, capacity: e.target.value})}
-                      required
-                      style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
-                    />
-                    <textarea
-                      placeholder="Description (optional)"
-                      value={formData.description}
-                      onChange={(e) => setFormData({...formData, description: e.target.value})}
-                      rows="2"
-                      style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
-                    />
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                    <button type="submit" style={{
-                      flex: 1,
-                      background: '#2196f3',
-                      color: 'white',
-                      border: 'none',
-                      padding: '10px',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      fontWeight: '500'
-                    }}>
-                      {editingRoom ? 'Update Room' : 'Create Room'}
-                    </button>
-                    <button type="button" onClick={closeModal} style={{
-                      flex: 1,
-                      background: '#a0aec0',
-                      color: 'white',
-                      border: 'none',
-                      padding: '10px',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
+              )}
             </div>
           )}
         </main>
       </div>
 
-      <style>{`
-        @keyframes slideIn {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes scaleIn {
-          from {
-            transform: scale(0.9);
-            opacity: 0;
-          }
-          to {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+      {/* Modal */}
+      {showModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(3px)', padding: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '24px', padding: '32px', width: '540px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#1a1a2e' }}>{editRoom ? '✏️ Edit Room' : '🏠 Add New Room'}</h2>
+              <button onClick={() => setShowModal(false)} style={{ background: '#f3f4f6', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Room Number *</label>
+                  <input value={formData.room_number} onChange={e => setFormData({ ...formData, room_number: e.target.value })} required style={inputStyle} placeholder="e.g. A101" /></div>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Floor *</label>
+                  <input type="number" value={formData.floor} onChange={e => setFormData({ ...formData, floor: e.target.value })} required style={inputStyle} placeholder="1" /></div>
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Building *</label>
+                <input value={formData.building} onChange={e => setFormData({ ...formData, building: e.target.value })} required style={inputStyle} placeholder="e.g. Building A" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Room Type</label>
+                  <select value={formData.room_type} onChange={e => setFormData({ ...formData, room_type: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    <option value="dormitory">Dormitory</option>
+                    <option value="single">Single</option>
+                    <option value="double">Double</option>
+                    <option value="triple">Triple</option>
+                    <option value="quad">Quad</option>
+                  </select></div>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Capacity *</label>
+                  <input type="number" min="1" value={formData.capacity} onChange={e => setFormData({ ...formData, capacity: e.target.value })} required style={inputStyle} /></div>
+              </div>
+              {editRoom && (
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Status</label>
+                  <select value={formData.room_status} onChange={e => setFormData({ ...formData, room_status: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    <option value="available">Available</option>
+                    <option value="full">Full</option>
+                    <option value="maintenance">Maintenance</option>
+                  </select>
+                </div>
+              )}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Description</label>
+                <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Optional room description..." />
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" onClick={() => setShowModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: '10px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ flex: 2, padding: '12px', background: 'linear-gradient(135deg, #5B5CE2, #7C3AED)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>
+                  {editRoom ? 'Update Room' : 'Create Room'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };

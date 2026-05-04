@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -42,7 +41,7 @@ const AdminChangePassword = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      setMessage({ type: 'success', text: response.data.message });
+      setMessage({ type: 'success', text: response.message });
       setFormData({ current_password: '', new_password: '', confirm_password: '' });
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to change password' });

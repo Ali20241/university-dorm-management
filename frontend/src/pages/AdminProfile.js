@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -27,13 +26,13 @@ const AdminProfile = () => {
       const response = await api.get('/admin/profile/details', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (response.data.success) {
-        setProfile(response.data.profile);
+      if (response.success) {
+        setProfile(response.profile);
         setFormData({
-          phone: response.data.profile.phone || '',
-          position: response.data.profile.position || '',
-          department: response.data.profile.department || '',
-          address: response.data.profile.address || ''
+          phone: response.profile.phone || '',
+          position: response.profile.position || '',
+          department: response.profile.department || '',
+          address: response.profile.address || ''
         });
       }
     } catch (error) {
@@ -59,7 +58,7 @@ const AdminProfile = () => {
           'Content-Type': 'multipart/form-data'
         }
       });
-      if (response.data.success) {
+      if (response.success) {
         setMessage({ type: 'success', text: 'Profile photo updated!' });
         fetchAdminProfile();
         setTimeout(() => setMessage(null), 3000);

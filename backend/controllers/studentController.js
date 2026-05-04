@@ -1,34 +1,39 @@
-const mysql = require('mysql2');
+const { pool } = require('../db');
 require('dotenv').config();
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
-
-const getAllStudents = (req, res) => {
-  db.query('SELECT * FROM students', (err, results) => {
-    if (err) {
-      res.status(500).json({ success: false, message: err.message });
-    } else {
-      res.json({ success: true, count: results.length, students: results });
-    }
-  });
+const getAllStudents = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT s.*, u.email, u.created_at as registered_at
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       ORDER BY s.first_name, s.last_name`
+    );
+    res.json({ success: true, count: result.rows.length, students: result.rows });
+  } catch (err) {
+    console.error('getAllStudents error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const getStudentById = (req, res) => {
+const getStudentById = async (req, res) => {
   const { id } = req.params;
-  db.query('SELECT * FROM students WHERE id = ?', [id], (err, results) => {
-    if (err) {
-      res.status(500).json({ success: false, message: err.message });
-    } else if (results.length === 0) {
-      res.status(404).json({ success: false, message: 'Student not found' });
-    } else {
-      res.json({ success: true, student: results[0] });
+  try {
+    const result = await pool.query(
+      `SELECT s.*, u.email, u.created_at as registered_at
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       WHERE s.id = $1`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
     }
-  });
+    res.json({ success: true, student: result.rows[0] });
+  } catch (err) {
+    console.error('getStudentById error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 module.exports = { getAllStudents, getStudentById };

@@ -1,264 +1,101 @@
-import api from '../services/api';
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useLanguage } from '../context/LanguageContext';
 import axios from 'axios';
-import '../styles/Navbar.css';
+import api from '../services/api';
 import ThemeToggle from './ThemeToggle';
+import '../styles/Navbar.css';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
-  const { t } = useLanguage();
   const navigate = useNavigate();
+  const [profileName, setProfileName] = useState('');
   const [profileImage, setProfileImage] = useState(null);
-  const [userName, setUserName] = useState('');
+  const [profileInitials, setProfileInitials] = useState('U');
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  
-  const notificationRef = useRef(null);
   const dropdownRef = useRef(null);
+  const notifRef = useRef(null);
 
   useEffect(() => {
-    if (user?.role === 'student') {
-      fetchStudentProfile();
-      fetchRealNotifications();
-    } else if (user?.role === 'admin') {
-      fetchAdminProfile();
-      fetchAdminNotifications();
-    } else {
-      setUserName(user?.email?.split('@')[0] || 'User');
+    if (user) {
+      fetchProfile();
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 30000);
+      return () => clearInterval(interval);
     }
-    
-    // Set up polling for real-time notifications (every 30 seconds)
-    const interval = setInterval(() => {
-      if (user?.role === 'student') {
-        fetchRealNotifications();
-      } else if (user?.role === 'admin') {
-        fetchAdminNotifications();
-      }
-    }, 30000);
-    
-    return () => clearInterval(interval);
   }, [user]);
 
-  // Close dropdowns when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
-        setShowNotifications(false);
-      }
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setShowDropdown(false);
-      }
+    const handleClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setShowDropdown(false);
+      if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifications(false);
     };
-    
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const fetchStudentProfile = async () => {
+  const fetchProfile = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
     try {
-      const token = localStorage.getItem('token');
-      const response = await api.get('/student/profile/details', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (response.data.success) {
-        setProfileImage(response.data.profile.profile_image);
-        setUserName(response.data.profile.first_name);
+      if (user?.role === 'admin') {
+        const res = await api.get('/admin/profile/details', { headers: { Authorization: `Bearer ${token}` } });
+        const name = res.profile?.email?.split('@')[0] || 'Admin';
+        setProfileName(name);
+        setProfileInitials(name.charAt(0).toUpperCase());
+      } else {
+        const res = await api.get('/student/profile', { headers: { Authorization: `Bearer ${token}` } });
+        const s = res.student;
+        const name = `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Student';
+        setProfileName(name);
+        setProfileInitials((s.first_name?.charAt(0) || 'S').toUpperCase());
+        if (s.profile_image) setProfileImage(`${process.env.REACT_APP_API_URL?.replace('/api', '') || 'http://localhost:5001'}${s.profile_image}`);
       }
-    } catch (error) {
-      console.error('Error fetching student profile:', error);
-      setUserName(user?.firstName || user?.email?.split('@')[0] || 'Student');
+    } catch (e) {
+      setProfileName(user?.email?.split('@')[0] || 'User');
+      setProfileInitials((user?.email?.charAt(0) || 'U').toUpperCase());
     }
   };
 
-  const fetchAdminProfile = async () => {
+  const fetchNotifications = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
     try {
-      const token = localStorage.getItem('token');
-      const response = await api.get('/admin/profile/details', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (response.data.success) {
-        setProfileImage(response.data.profile.profile_image);
-        setUserName(response.data.profile.first_name || response.data.profile.email?.split('@')[0] || 'Admin');
+      if (user?.role === 'student') {
+        const res = await api.get('/student/notifications', { headers: { Authorization: `Bearer ${token}` } });
+        const apps = (res.applications || []).slice(0, 3).map(a => ({
+          id: `app-${a.id}`, icon: '📋',
+          message: `Room application for ${a.room_number} — ${a.status}`,
+          time: new Date(a.application_date).toLocaleDateString(), unread: a.status === 'pending'
+        }));
+        const maint = (res.maintenance || []).slice(0, 2).map(m => ({
+          id: `maint-${m.id}`, icon: '🔧',
+          message: `Maintenance: ${m.title} — ${m.status}`,
+          time: new Date(m.created_at).toLocaleDateString(), unread: m.status === 'open'
+        }));
+        const pens = (res.penalties || []).filter(p => p.status !== 'paid').slice(0, 2).map(p => ({
+          id: `pen-${p.id}`, icon: '⚠️',
+          message: `Penalty: ETB ${p.penalty_amount} — ${p.penalty_type}`,
+          time: new Date(p.issued_date).toLocaleDateString(), unread: true
+        }));
+        const all = [...apps, ...maint, ...pens];
+        setNotifications(all);
+        setUnreadCount(all.filter(n => n.unread).length);
+      } else {
+        const res = await api.get('/admin/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+        const s = res.statistics || {};
+        const items = [];
+        if (s.pendingApplications > 0) items.push({ id: 'pending', icon: '📋', message: `${s.pendingApplications} pending application(s) awaiting review`, unread: true });
+        if (s.openMaintenance > 0) items.push({ id: 'maint', icon: '🔧', message: `${s.openMaintenance} open maintenance request(s)`, unread: true });
+        setNotifications(items);
+        setUnreadCount(items.filter(n => n.unread).length);
       }
-    } catch (error) {
-      console.error('Error fetching admin profile:', error);
-      setUserName(user?.email?.split('@')[0] || 'Admin');
-    }
-  };
-
-  // Fetch real notifications for students
-  const fetchRealNotifications = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      
-      // Get pending applications status
-      const applicationsRes = await api.get('/student/applications', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      // Get maintenance requests
-      const maintenanceRes = await api.get('/student/maintenance', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      // Get penalties
-      const penaltiesRes = await api.get('/student/penalties', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      const newNotifications = [];
-      
-      // Check pending applications
-      const pendingApps = applicationsRes.data.applications?.filter(a => a.status === 'pending') || [];
-      if (pendingApps.length > 0) {
-        newNotifications.push({
-          id: 'pending_apps',
-          text: `${pendingApps.length} room application(s) pending review`,
-          time: 'Just now',
-          read: false,
-          type: 'application',
-          link: '/student/applications'
-        });
-      }
-      
-      // Check approved applications
-      const approvedApps = applicationsRes.data.applications?.filter(a => a.status === 'approved') || [];
-      if (approvedApps.length > 0) {
-        newNotifications.push({
-          id: 'approved_apps',
-          text: `${approvedApps.length} application(s) have been approved!`,
-          time: 'Just now',
-          read: false,
-          type: 'application',
-          link: '/student/assignment'
-        });
-      }
-      
-      // Check rejected applications
-      const rejectedApps = applicationsRes.data.applications?.filter(a => a.status === 'rejected') || [];
-      if (rejectedApps.length > 0) {
-        newNotifications.push({
-          id: 'rejected_apps',
-          text: `${rejectedApps.length} application(s) were rejected`,
-          time: 'Just now',
-          read: false,
-          type: 'application',
-          link: '/student/applications'
-        });
-      }
-      
-      // Check open maintenance requests
-      const openMaintenance = maintenanceRes.data.requests?.filter(r => r.status === 'open') || [];
-      if (openMaintenance.length > 0) {
-        newNotifications.push({
-          id: 'open_maintenance',
-          text: `${openMaintenance.length} maintenance request(s) are open`,
-          time: 'Just now',
-          read: false,
-          type: 'maintenance',
-          link: '/student/maintenance'
-        });
-      }
-      
-      // Check completed maintenance
-      const completedMaintenance = maintenanceRes.data.requests?.filter(r => r.status === 'completed') || [];
-      if (completedMaintenance.length > 0) {
-        newNotifications.push({
-          id: 'completed_maintenance',
-          text: `${completedMaintenance.length} maintenance request(s) have been completed`,
-          time: 'Just now',
-          read: false,
-          type: 'maintenance',
-          link: '/student/maintenance'
-        });
-      }
-      
-      // Check unpaid penalties
-      const unpaidPenalties = penaltiesRes.data.penalties?.filter(p => p.status !== 'paid') || [];
-      if (unpaidPenalties.length > 0) {
-        const totalAmount = unpaidPenalties.reduce((sum, p) => sum + parseFloat(p.penalty_amount), 0);
-        newNotifications.push({
-          id: 'unpaid_penalties',
-          text: `You have ${unpaidPenalties.length} unpaid penalty(ies) totaling ETB ${totalAmount.toFixed(2)}`,
-          time: 'Just now',
-          read: false,
-          type: 'penalty',
-          link: '/student/payments'
-        });
-      }
-      
-      setNotifications(newNotifications);
-      setUnreadCount(newNotifications.filter(n => !n.read).length);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    }
-  };
-
-  // Fetch notifications for admin
-  const fetchAdminNotifications = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      
-      const [applicationsRes, maintenanceRes, penaltiesRes] = await Promise.all([
-        api.get('/admin/applications', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        api.get('/admin/maintenance', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        api.get('/admin/penalties', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-      ]);
-      
-      const newNotifications = [];
-      
-      const pendingApps = applicationsRes.data.applications?.filter(a => a.status === 'pending') || [];
-      if (pendingApps.length > 0) {
-        newNotifications.push({
-          id: 'admin_pending_apps',
-          text: `${pendingApps.length} pending room application(s) need review`,
-          time: 'Just now',
-          read: false,
-          type: 'application',
-          link: '/admin/applications'
-        });
-      }
-      
-      const openMaintenance = maintenanceRes.data.requests?.filter(r => r.status === 'open') || [];
-      if (openMaintenance.length > 0) {
-        newNotifications.push({
-          id: 'admin_open_maintenance',
-          text: `${openMaintenance.length} open maintenance request(s)`,
-          time: 'Just now',
-          read: false,
-          type: 'maintenance',
-          link: '/admin/maintenance'
-        });
-      }
-      
-      const unpaidPenalties = penaltiesRes.data.penalties?.filter(p => p.status !== 'paid') || [];
-      if (unpaidPenalties.length > 0) {
-        newNotifications.push({
-          id: 'admin_unpaid_penalties',
-          text: `${unpaidPenalties.length} unpaid penalty(ies)`,
-          time: 'Just now',
-          read: false,
-          type: 'penalty',
-          link: '/admin/penalties'
-        });
-      }
-      
-      setNotifications(newNotifications);
-      setUnreadCount(newNotifications.filter(n => !n.read).length);
-    } catch (error) {
-      console.error('Error fetching admin notifications:', error);
-    }
+    } catch (e) {}
   };
 
   const handleLogout = () => {
@@ -266,160 +103,100 @@ const Navbar = () => {
     navigate('/login');
   };
 
-  const getInitials = () => {
-    if (userName) return userName.charAt(0).toUpperCase();
-    return '👤';
-  };
-
-  const goToProfile = () => {
-    if (user?.role === 'admin') {
-      navigate('/admin/profile');
-    } else if (user?.role === 'student') {
-      navigate('/student/profile');
-    }
-    setShowDropdown(false);
-    setShowNotifications(false);
-  };
-
-  const toggleDropdown = (e) => {
-    e.stopPropagation();
-    setShowDropdown(!showDropdown);
-    setShowNotifications(false);
-  };
-
-  const toggleNotifications = (e) => {
-    e.stopPropagation();
-    setShowNotifications(!showNotifications);
-    setShowDropdown(false);
-    // Mark all as read when opening
-    if (!showNotifications) {
-      setNotifications(notifications.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
-    }
-  };
-
-  const handleNotificationClick = (link) => {
-    setShowNotifications(false);
-    navigate(link);
-  };
-
-  const getNotificationIcon = (type) => {
-    switch(type) {
-      case 'application': return '📋';
-      case 'maintenance': return '🔧';
-      case 'penalty': return '⚠️';
-      default: return '🔔';
-    }
-  };
-
   return (
     <nav className="navbar">
       <div className="navbar-container">
-        <Link to="/" className="navbar-logo">
-          🏛️ {t('appTitle')}
+        <Link to={user?.role === 'admin' ? '/admin/dashboard' : '/student/dashboard'} className="navbar-logo">
+          <div className="navbar-logo-icon">🏛️</div>
+          <span>DormHub</span>
         </Link>
+
         <div className="navbar-right">
-  <ThemeToggle />
-  {/* rest of navbar items */}
-</div>
-        
-        <div className="navbar-right">
-          {/* Notification Bell */}
-          <div ref={notificationRef} style={{ position: 'relative' }}>
-            <button className="notification-btn" onClick={toggleNotifications}>
+          <ThemeToggle />
+
+          {/* Notifications */}
+          <div ref={notifRef} style={{ position: 'relative' }}>
+            <button className="notification-btn" onClick={() => { setShowNotifications(!showNotifications); setShowDropdown(false); }}>
               <span className="notification-icon">🔔</span>
-              {unreadCount > 0 && <span className="notification-badge">{unreadCount}</span>}
+              {unreadCount > 0 && <span className="notification-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
             </button>
-            
+
             {showNotifications && (
               <div className="notifications-dropdown">
                 <div className="notifications-header">
-                  <strong>Notifications</strong>
-                  {notifications.length === 0 && <span style={{ fontSize: '12px', color: '#6B7280' }}>No new notifications</span>}
+                  <strong>🔔 Notifications {unreadCount > 0 && `(${unreadCount})`}</strong>
+                  {unreadCount > 0 && <button className="mark-all-read" onClick={() => { setUnreadCount(0); setNotifications(prev => prev.map(n => ({ ...n, unread: false }))); }}>Mark all read</button>}
                 </div>
-                {notifications.length > 0 ? (
-                  notifications.map((notif, index) => (
-                    <div 
-                      key={index} 
-                      className={`notification-item ${!notif.read ? 'unread' : ''}`}
-                      onClick={() => handleNotificationClick(notif.link)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: '20px' }}>{getNotificationIcon(notif.type)}</span>
-                        <div style={{ flex: 1 }}>
-                          <p>{notif.text}</p>
-                          <small>{notif.time}</small>
-                        </div>
-                      </div>
+                {notifications.length === 0 ? (
+                  <div className="notifications-empty">
+                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>🎉</div>
+                    <p>You're all caught up!</p>
+                  </div>
+                ) : (
+                  notifications.map(n => (
+                    <div key={n.id} className={`notification-item ${n.unread ? 'unread' : ''}`}>
+                      <p><span style={{ marginRight: '6px' }}>{n.icon}</span>{n.message}</p>
+                      {n.time && <small>{n.time}</small>}
                     </div>
                   ))
-                ) : (
-                  <div className="notification-item" style={{ textAlign: 'center' }}>
-                    <p>✨ All caught up!</p>
-                    <small>No new notifications</small>
-                  </div>
                 )}
               </div>
             )}
           </div>
-          
+
+          {/* Greeting */}
           <span className="user-greeting">
-            {t('hi')}, {userName}! 👋
+            Hello, {profileName || user?.email?.split('@')[0] || 'User'} 👋
           </span>
-          
+
+          {/* Profile */}
           <div ref={dropdownRef} className="profile-circle-container">
-            <div className="profile-circle" onClick={goToProfile}>
+            <div className="profile-circle" onClick={() => { setShowDropdown(!showDropdown); setShowNotifications(false); }}>
               {profileImage ? (
-                <img 
-                  src={`${profileImage}`} 
-                  alt="Profile"
-                  className="profile-avatar"
-                />
+                <img src={profileImage} alt="Profile" className="profile-avatar" />
               ) : (
-                <span className="profile-initials">{getInitials()}</span>
+                <span className="profile-initials">{profileInitials}</span>
               )}
             </div>
-            
-            <button className="dropdown-arrow" onClick={toggleDropdown}>
-              ▼
-            </button>
-            
+            <button className={`dropdown-arrow ${showDropdown ? 'open' : ''}`} onClick={() => setShowDropdown(!showDropdown)}>▼</button>
+
             {showDropdown && (
               <div className="profile-dropdown">
                 <div className="dropdown-header">
                   <div className="dropdown-avatar">
-                    {profileImage ? (
-                      <img src={`${profileImage}`} alt="Profile" />
-                    ) : (
-                      <span>{getInitials()}</span>
-                    )}
+                    {profileImage ? <img src={profileImage} alt="Profile" /> : <span>{profileInitials}</span>}
                   </div>
                   <div className="dropdown-info">
-                    <strong>{userName}</strong>
+                    <strong>{profileName || 'User'}</strong>
                     <small>{user?.email}</small>
+                    <span className="role-chip">{user?.role || 'user'}</span>
                   </div>
                 </div>
-                
-                <button onClick={goToProfile} className="dropdown-item">
-                  👤 {t('profile')}
-                </button>
-                
-                {user?.role === 'admin' && (
-                  <Link to="/admin/change-password" className="dropdown-item" onClick={() => setShowDropdown(false)}>
-                    🔐 {t('changePassword')}
-                  </Link>
+
+                {user?.role === 'admin' ? (
+                  <>
+                    <Link to="/admin/profile" className="dropdown-item" onClick={() => setShowDropdown(false)}>
+                      <span className="item-icon">⚙️</span> Settings
+                    </Link>
+                    <Link to="/admin/change-password" className="dropdown-item" onClick={() => setShowDropdown(false)}>
+                      <span className="item-icon">🔐</span> Change Password
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Link to="/student/profile" className="dropdown-item" onClick={() => setShowDropdown(false)}>
+                      <span className="item-icon">👤</span> My Profile
+                    </Link>
+                    <Link to="/student/notifications" className="dropdown-item" onClick={() => setShowDropdown(false)}>
+                      <span className="item-icon">🔔</span> Notifications
+                      {unreadCount > 0 && <span style={{ marginLeft: 'auto', background: '#ef4444', color: 'white', fontSize: '10px', padding: '1px 6px', borderRadius: '10px', fontWeight: '700' }}>{unreadCount}</span>}
+                    </Link>
+                  </>
                 )}
-                
-                {user?.role === 'student' && (
-                  <Link to="/student/profile" className="dropdown-item" onClick={() => setShowDropdown(false)}>
-                    👤 {t('edit')} {t('profile')}
-                  </Link>
-                )}
-                
+
                 <hr className="dropdown-divider" />
-                <button onClick={handleLogout} className="dropdown-item logout-btn">
-                  🚪 {t('logout')}
+                <button className="dropdown-item logout-btn" onClick={handleLogout}>
+                  <span className="item-icon">🚪</span> Sign Out
                 </button>
               </div>
             )}

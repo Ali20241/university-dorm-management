@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -23,7 +22,7 @@ const AvailableRooms = () => {
       const response = await api.get('/rooms', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setRooms(response.data.rooms);
+      setRooms(response.rooms || []);
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -42,7 +41,7 @@ const AvailableRooms = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      const studentId = profileResponse.data.student.id;
+      const studentId = profileResponse.student.id;
       console.log('Student ID from profile:', studentId);
       
       const response = await api.post('/student/apply', 

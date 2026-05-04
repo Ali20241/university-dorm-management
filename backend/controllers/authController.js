@@ -1,47 +1,41 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const mysql = require('mysql2');
+const { pool } = require('../db');
 require('dotenv').config();
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
-
-const loginUser = (req, res) => {
+const loginUser = async (req, res) => {
   const { email, password } = req.body;
-  
-  db.query('SELECT * FROM users WHERE email = ?', [email], async (err, users) => {
-    if (err) {
-      return res.status(500).json({ success: false, message: err.message });
-    }
-    
-    if (users.length === 0) {
+
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+
+    if (result.rows.length === 0) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
-    
-    const user = users[0];
+
+    const user = result.rows[0];
     const passwordMatch = await bcrypt.compare(password, user.password);
-    
+
     if (!passwordMatch) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
-    
+
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
+      { expiresIn: process.env.JWT_EXPIRE || '7d' }
     );
-    
+
     res.json({
       success: true,
       message: 'Login successful',
       token,
       user: { id: user.id, email: user.email, role: user.role }
     });
-  });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ success: false, message: 'Server error during login' });
+  }
 };
 
 module.exports = { loginUser };

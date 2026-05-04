@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -31,15 +30,15 @@ const StudentProfile = () => {
       const response = await api.get('/student/profile/details', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setProfile(response.data.profile);
+      setProfile(response.profile);
       setFormData({
-        phone: response.data.profile.phone || '',
-        address: response.data.profile.address || '',
-        city: response.data.profile.city || '',
-        major: response.data.profile.major || '',
-        year: response.data.profile.year || '',
-        parent_name: response.data.profile.parent_name || '',
-        parent_phone: response.data.profile.parent_phone || ''
+        phone: response.profile.phone || '',
+        address: response.profile.address || '',
+        city: response.profile.city || '',
+        major: response.profile.major || '',
+        year: response.profile.year || '',
+        parent_name: response.profile.parent_name || '',
+        parent_phone: response.profile.parent_phone || ''
       });
     } catch (error) {
       console.error('Error:', error);
@@ -64,7 +63,7 @@ const StudentProfile = () => {
           'Content-Type': 'multipart/form-data'
         }
       });
-      if (response.data.success) {
+      if (response.success) {
         setMessage({ type: 'success', text: 'Profile photo updated!' });
         fetchProfile(); // Refresh profile
         setTimeout(() => setMessage(null), 3000);
