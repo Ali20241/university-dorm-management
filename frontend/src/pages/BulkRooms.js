@@ -29,7 +29,7 @@ const BulkRooms = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      setMessage({ type: 'success', text: response.data.message });
+      setMessage({ type: 'success', text: response.message });
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to create rooms' });
     } finally {

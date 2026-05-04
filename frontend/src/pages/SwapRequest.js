@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -23,15 +22,15 @@ const SwapRequest = () => {
     try {
       const token = localStorage.getItem('token');
       const [studentsRes, requestsRes] = await Promise.all([
-        api.get('/students/all', {
+        api.get('/admin/students', {
           headers: { Authorization: `Bearer ${token}` }
-        }),
-        api.get('/student/my-swap-requests', {
+        }).catch(() => ({ students: [] })),
+        api.get('/student/swap-requests', {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
-      setStudents(studentsRes.data.students);
-      setMyRequests(requestsRes.data.requests);
+      setStudents(studentsRes.students || []);
+      setMyRequests(requestsRes.swap_requests || []);
     } catch (error) {
       console.error('Error:', error);
     } finally {

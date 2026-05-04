@@ -1,308 +1,338 @@
-import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
-import { exportStudentsToPDF } from '../utils/pdfExport';
 
 const Students = () => {
-  const navigate = useNavigate();
   const [students, setStudents] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showPwdModal, setShowPwdModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [studentToDelete, setStudentToDelete] = useState(null);
-  const [newPassword, setNewPassword] = useState('');
   const [message, setMessage] = useState(null);
+  const [newPwd, setNewPwd] = useState('');
   const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    studentId: '',
-    phone: '',
-    major: '',
-    year: '',
-    gender: '',
-    password: ''
+    firstName: '', lastName: '', studentId: '', email: '',
+    password: 'Welcome123', phone: '', major: '', year: '1', gender: ''
   });
 
+  useEffect(() => { fetchStudents(); }, []);
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    const q = search.toLowerCase();
+    setFiltered(students.filter(s =>
+      s.first_name?.toLowerCase().includes(q) ||
+      s.last_name?.toLowerCase().includes(q) ||
+      s.student_id?.toLowerCase().includes(q) ||
+      s.email?.toLowerCase().includes(q) ||
+      s.major?.toLowerCase().includes(q)
+    ));
+  }, [search, students]);
 
   const fetchStudents = async () => {
+    setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await api.get('/admin/students', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setStudents(response.data.students);
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setLoading(false);
-    }
+      const res = await api.get('/admin/students', { headers: { Authorization: `Bearer ${token}` } });
+      setStudents(res.students || []);
+    } catch (e) { showMsg('error', 'Failed to load students'); }
+    finally { setLoading(false); }
   };
 
-  const handleAddStudent = async (e) => {
+  const showMsg = (type, text) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 4000);
+  };
+
+  const handleAdd = async (e) => {
     e.preventDefault();
-    if (formData.password.length < 6) {
-      setMessage({ type: 'error', text: 'Password must be at least 6 characters' });
-      return;
-    }
-    
     try {
       const token = localStorage.getItem('token');
-      await api.post('/auth/register', {
-        email: formData.email,
-        password: formData.password,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        studentId: formData.studentId,
-        phone: formData.phone,
-        major: formData.major,
-        year: formData.year,
-        gender: formData.gender
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMessage({ type: 'success', text: 'Student added successfully!' });
+      await api.post('/auth/register', formData, { headers: { Authorization: `Bearer ${token}` } });
+      showMsg('success', 'Student added successfully!');
       setShowAddModal(false);
-      setFormData({ firstName: '', lastName: '', email: '', studentId: '', phone: '', major: '', year: '', gender: '', password: '' });
+      setFormData({ firstName: '', lastName: '', studentId: '', email: '', password: 'Welcome123', phone: '', major: '', year: '1', gender: '' });
       fetchStudents();
-      setTimeout(() => setMessage(null), 3000);
-    } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to add student' });
-      setTimeout(() => setMessage(null), 3000);
-    }
+    } catch (e) { showMsg('error', e.response?.data?.message || 'Failed to add student'); }
   };
 
-  const handleDeleteStudent = async () => {
-    if (!studentToDelete) return;
-    
+  const handleDelete = async () => {
     try {
       const token = localStorage.getItem('token');
-      await api.delete(`/admin/students/${studentToDelete.id}/delete`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMessage({ type: 'success', text: 'Student deleted successfully!' });
-      setShowDeleteConfirm(false);
-      setStudentToDelete(null);
+      await api.delete(`/admin/students/${selectedStudent.id}/delete`, { headers: { Authorization: `Bearer ${token}` } });
+      showMsg('success', 'Student deleted successfully!');
+      setShowDeleteModal(false);
       fetchStudents();
-      setTimeout(() => setMessage(null), 3000);
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to delete student' });
-      setTimeout(() => setMessage(null), 3000);
-    }
+    } catch (e) { showMsg('error', 'Failed to delete student'); }
   };
 
-  const handleChangePassword = async () => {
-    if (newPassword.length < 6) {
-      setMessage({ type: 'error', text: 'Password must be at least 6 characters' });
-      return;
-    }
+  const handleChangePwd = async (e) => {
+    e.preventDefault();
+    if (newPwd.length < 6) { showMsg('error', 'Password must be at least 6 characters'); return; }
     try {
       const token = localStorage.getItem('token');
-      await api.put(`/admin/students/${selectedStudent.id}/change-password`, 
-        { new_password: newPassword },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setMessage({ type: 'success', text: 'Password changed successfully!' });
-      setShowPasswordModal(false);
-      setNewPassword('');
-      setTimeout(() => setMessage(null), 3000);
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to change password' });
-      setTimeout(() => setMessage(null), 3000);
-    }
+      await api.put(`/admin/students/${selectedStudent.id}/change-password`, { new_password: newPwd }, { headers: { Authorization: `Bearer ${token}` } });
+      showMsg('success', 'Password changed successfully!');
+      setShowPwdModal(false);
+      setNewPwd('');
+    } catch (e) { showMsg('error', 'Failed to change password'); }
   };
 
-  const handleViewDetails = (studentId) => {
-    navigate(`/admin/students/${studentId}`);
-  };
+  const inputStyle = { width: '100%', padding: '10px 12px', border: '1.5px solid #e5e7eb', borderRadius: '8px', fontSize: '13px', outline: 'none', background: '#fafafa', fontFamily: 'Inter, sans-serif' };
 
-  const getGenderLabel = (gender) => {
-    if (gender === 'male') return 'Male';
-    if (gender === 'female') return 'Female';
-    if (gender === 'other') return 'Other';
-    return '-';
-  };
+  const genderColor = (g) => g === 'male' ? { bg: '#dbeafe', color: '#1e40af' } : g === 'female' ? { bg: '#fce7f3', color: '#9d174d' } : { bg: '#f3f4f6', color: '#6b7280' };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#F7F8FC' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f0f4f8' }}>
       <Navbar />
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar role="admin" />
-        <main style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
-          
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '15px' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: '600', color: '#1a1a2e', margin: 0 }}>👥 Registered Students</h1>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button 
-                onClick={() => exportStudentsToPDF(students)}
-                style={{
-                  background: '#EF4444',
-                  color: 'white',
-                  border: 'none',
-                  padding: '10px 20px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                📄 Export PDF
-              </button>
-              <button 
-                onClick={() => setShowAddModal(true)}
-                style={{
-                  background: '#5B5CE2',
-                  color: 'white',
-                  border: 'none',
-                  padding: '10px 20px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                + Add Student
-              </button>
+        <main style={{ flex: 1, padding: '28px', overflowY: 'auto', height: 'calc(100vh - 64px)' }}>
+
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '14px' }}>
+            <div>
+              <h1 style={{ fontSize: '24px', fontWeight: '800', color: '#1a1a2e', marginBottom: '4px' }}>👥 Students</h1>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>Manage all registered students</p>
             </div>
-          </div>
-          
-          {message && (
-            <div style={{ 
-              background: message.type === 'success' ? '#ECFDF5' : '#FEF2F2', 
-              color: message.type === 'success' ? '#065F46' : '#991B1B', 
-              padding: '12px', 
-              borderRadius: '8px', 
-              marginBottom: '20px',
-              fontSize: '14px'
+            <button onClick={() => setShowAddModal(true)} style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: 'linear-gradient(135deg, #5B5CE2, #7C3AED)', color: 'white',
+              border: 'none', borderRadius: '12px', padding: '11px 20px',
+              fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(91,92,226,0.3)'
             }}>
-              {message.text}
+              <span>+</span> Add Student
+            </button>
+          </div>
+
+          {message && (
+            <div style={{
+              padding: '12px 16px', borderRadius: '10px', marginBottom: '18px', fontSize: '13px', fontWeight: '500',
+              background: message.type === 'success' ? '#d1fae5' : '#fee2e2',
+              color: message.type === 'success' ? '#065f46' : '#991b1b',
+              border: `1px solid ${message.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+              display: 'flex', alignItems: 'center', gap: '8px'
+            }}>
+              {message.type === 'success' ? '✅' : '⚠️'} {message.text}
             </div>
           )}
-          
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '50px' }}>Loading...</div>
-          ) : (
-            <div style={{ background: 'white', borderRadius: '12px', overflow: 'auto', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
-                  <tr>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>ID</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>Student ID</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>Name</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>Gender</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>Email</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>Phone</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>Major</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>Year</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#4B5563' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {students.map((s, i) => (
-                    <tr key={s.id} style={{ borderBottom: '1px solid #E5E7EB', background: i % 2 === 0 ? 'white' : '#F9FAFB' }}>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>{s.id}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>{s.student_id}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151', fontWeight: '500' }}>{s.first_name} {s.last_name}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>{getGenderLabel(s.gender)}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>{s.email}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>{s.phone || '-'}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>{s.major || '-'}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>{s.year || '-'}</td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <button onClick={() => handleViewDetails(s.id)} style={{ background: '#5B5CE2', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', marginRight: '6px', cursor: 'pointer', fontSize: '12px' }}>View</button>
-                        <button onClick={() => { setSelectedStudent(s); setShowPasswordModal(true); }} style={{ background: '#F59E0B', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', marginRight: '6px', cursor: 'pointer', fontSize: '12px' }}>Reset PW</button>
-                        <button onClick={() => { setStudentToDelete(s); setShowDeleteConfirm(true); }} style={{ background: '#EF4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>Delete</button>
-                       </td>
-                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          
-          {/* Add Student Modal */}
-          {showAddModal && (
-            <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                <h2 style={{ marginBottom: '20px', fontSize: '20px', fontWeight: '600' }}>Add New Student</h2>
-                <form onSubmit={handleAddStudent}>
-                  <div style={{ display: 'grid', gap: '15px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                      <input type="text" placeholder="First Name" value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} required style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }} />
-                      <input type="text" placeholder="Last Name" value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} required style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }} />
-                    </div>
-                    <input type="email" placeholder="Email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }} />
-                    <input type="text" placeholder="Student ID" value={formData.studentId} onChange={(e) => setFormData({...formData, studentId: e.target.value})} required style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }} />
-                    <input type="tel" placeholder="Phone" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }} />
-                    <input type="text" placeholder="Major" value={formData.major} onChange={(e) => setFormData({...formData, major: e.target.value})} style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }} />
-                    <select value={formData.year} onChange={(e) => setFormData({...formData, year: e.target.value})} style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }}>
-                      <option value="">Select Year</option>
-                      <option value="1">1st Year</option>
-                      <option value="2">2nd Year</option>
-                      <option value="3">3rd Year</option>
-                      <option value="4">4th Year</option>
-                    </select>
-                    <select value={formData.gender} onChange={(e) => setFormData({...formData, gender: e.target.value})} style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }}>
-                      <option value="">Select Gender</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
-                    <input type="password" placeholder="Password (min 6 characters)" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} required style={{ padding: '10px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }} />
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                    <button type="submit" style={{ flex: 1, background: '#5B5CE2', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }}>Save Student</button>
-                    <button type="button" onClick={() => setShowAddModal(false)} style={{ flex: 1, background: '#F3F4F6', color: '#374151', border: '1px solid #E5E7EB', padding: '12px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }}>Cancel</button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-          
-          {/* Delete Confirmation Modal */}
-          {showDeleteConfirm && (
-            <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
-              <div className="modal-content" style={{ textAlign: 'center', width: '350px' }} onClick={(e) => e.stopPropagation()}>
-                <h3 style={{ marginBottom: '15px' }}>Delete Student?</h3>
-                <p>Are you sure you want to delete <strong>{studentToDelete?.first_name} {studentToDelete?.last_name}</strong>?</p>
-                <p style={{ fontSize: '12px', color: '#EF4444', marginTop: '10px' }}>This action cannot be undone.</p>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                  <button onClick={handleDeleteStudent} style={{ flex: 1, background: '#EF4444', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer' }}>Delete</button>
-                  <button onClick={() => { setShowDeleteConfirm(false); setStudentToDelete(null); }} style={{ flex: 1, background: '#F3F4F6', color: '#374151', border: '1px solid #E5E7EB', padding: '10px', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
+
+          {/* Stats row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+            {[
+              { label: 'Total Students', value: students.length, icon: '👥', color: '#5B5CE2', bg: '#eef0ff' },
+              { label: 'Male', value: students.filter(s => s.gender === 'male').length, icon: '👨', color: '#3b82f6', bg: '#dbeafe' },
+              { label: 'Female', value: students.filter(s => s.gender === 'female').length, icon: '👩', color: '#ec4899', bg: '#fce7f3' },
+              { label: 'Active', value: students.filter(s => s.status === 'active').length, icon: '✅', color: '#10b981', bg: '#d1fae5' },
+            ].map((c, i) => (
+              <div key={i} style={{ background: 'white', borderRadius: '14px', padding: '16px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '44px', height: '44px', background: c.bg, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>{c.icon}</div>
+                <div>
+                  <p style={{ fontSize: '22px', fontWeight: '800', color: c.color }}>{c.value}</p>
+                  <p style={{ fontSize: '11px', color: '#6b7280', fontWeight: '500' }}>{c.label}</p>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div style={{ position: 'relative', marginBottom: '18px' }}>
+            <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px' }}>🔍</span>
+            <input
+              placeholder="Search by name, ID, email, or major..."
+              value={search} onChange={e => setSearch(e.target.value)}
+              style={{ width: '100%', padding: '11px 14px 11px 42px', border: '1.5px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white' }}
+              onFocus={e => e.target.style.borderColor = '#5B5CE2'}
+              onBlur={e => e.target.style.borderColor = '#e5e7eb'}
+            />
+          </div>
+
+          {/* Table */}
+          <div style={{ background: 'white', borderRadius: '20px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <p style={{ fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                {filtered.length} student{filtered.length !== 1 ? 's' : ''} {search && `matching "${search}"`}
+              </p>
             </div>
-          )}
-          
-          {/* Change Password Modal */}
-          {showPasswordModal && (
-            <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
-              <div className="modal-content" style={{ width: '400px' }} onClick={(e) => e.stopPropagation()}>
-                <h3 style={{ marginBottom: '15px' }}>Change Password for {selectedStudent?.first_name} {selectedStudent?.last_name}</h3>
-                <input type="password" placeholder="New Password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={{ width: '100%', padding: '12px', margin: '15px 0', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px' }} />
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button onClick={handleChangePassword} style={{ flex: 1, background: '#5B5CE2', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer' }}>Save</button>
-                  <button onClick={() => { setShowPasswordModal(false); setNewPassword(''); }} style={{ flex: 1, background: '#F3F4F6', color: '#374151', border: '1px solid #E5E7EB', padding: '10px', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
-                </div>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '60px' }}>
+                <div style={{ width: '36px', height: '36px', border: '3px solid #e2e8f0', borderTopColor: '#5B5CE2', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+                <p style={{ color: '#6b7280' }}>Loading students...</p>
               </div>
-            </div>
-          )}
+            ) : filtered.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px', color: '#9ca3af' }}>
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
+                <p style={{ fontSize: '16px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>No students found</p>
+                <p style={{ fontSize: '13px' }}>Try adjusting your search or add a new student</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
+                  <thead>
+                    <tr style={{ background: '#f9fafb' }}>
+                      {['#', 'Student', 'Student ID', 'Contact', 'Academic', 'Gender', 'Status', 'Actions'].map(h => (
+                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f3f4f6' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((s, i) => {
+                      const gc = genderColor(s.gender);
+                      return (
+                        <tr key={s.id} style={{ transition: 'background 0.15s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                          onMouseLeave={e => e.currentTarget.style.background = ''}>
+                          <td style={{ padding: '14px 16px', color: '#9ca3af', fontSize: '13px', borderBottom: '1px solid #f9fafb' }}>{i + 1}</td>
+                          <td style={{ padding: '14px 16px', borderBottom: '1px solid #f9fafb' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{
+                                width: '36px', height: '36px', borderRadius: '50%',
+                                background: `linear-gradient(135deg, hsl(${(i * 47) % 360},60%,60%), hsl(${(i * 47 + 40) % 360},70%,50%))`,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: 'white', fontWeight: '700', fontSize: '14px', flexShrink: 0
+                              }}>
+                                {s.first_name?.charAt(0) || 'S'}
+                              </div>
+                              <div>
+                                <p style={{ fontWeight: '600', color: '#1a1a2e', fontSize: '14px' }}>{s.first_name} {s.last_name}</p>
+                                <p style={{ fontSize: '11px', color: '#9ca3af' }}>{s.email}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '14px 16px', borderBottom: '1px solid #f9fafb' }}>
+                            <span style={{ fontWeight: '600', color: '#5B5CE2', fontSize: '13px' }}>{s.student_id || '—'}</span>
+                          </td>
+                          <td style={{ padding: '14px 16px', borderBottom: '1px solid #f9fafb' }}>
+                            <p style={{ fontSize: '13px', color: '#374151' }}>{s.phone || '—'}</p>
+                          </td>
+                          <td style={{ padding: '14px 16px', borderBottom: '1px solid #f9fafb' }}>
+                            <p style={{ fontSize: '13px', color: '#374151' }}>{s.major || '—'}</p>
+                            <p style={{ fontSize: '11px', color: '#9ca3af' }}>Year {s.year || '?'}</p>
+                          </td>
+                          <td style={{ padding: '14px 16px', borderBottom: '1px solid #f9fafb' }}>
+                            <span style={{ background: gc.bg, color: gc.color, padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', textTransform: 'capitalize' }}>
+                              {s.gender || 'N/A'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '14px 16px', borderBottom: '1px solid #f9fafb' }}>
+                            <span style={{ background: s.status === 'active' ? '#d1fae5' : '#fee2e2', color: s.status === 'active' ? '#065f46' : '#991b1b', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' }}>
+                              {s.status || 'active'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '14px 16px', borderBottom: '1px solid #f9fafb' }}>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button onClick={() => { setSelectedStudent(s); setShowPwdModal(true); }} style={{ padding: '5px 10px', background: '#eef0ff', color: '#5B5CE2', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>
+                                🔐 Reset
+                              </button>
+                              <button onClick={() => { setSelectedStudent(s); setShowDeleteModal(true); }} style={{ padding: '5px 10px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </main>
       </div>
+
+      {/* Add Modal */}
+      {showAddModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(3px)', padding: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '24px', padding: '32px', width: '560px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#1a1a2e' }}>➕ Add New Student</h2>
+              <button onClick={() => setShowAddModal(false)} style={{ background: '#f3f4f6', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+            </div>
+            <form onSubmit={handleAdd}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>First Name *</label>
+                  <input name="firstName" value={formData.firstName} onChange={e => setFormData({ ...formData, firstName: e.target.value })} required style={inputStyle} placeholder="First name" /></div>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Last Name *</label>
+                  <input name="lastName" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })} required style={inputStyle} placeholder="Last name" /></div>
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Student ID *</label>
+                <input value={formData.studentId} onChange={e => setFormData({ ...formData, studentId: e.target.value })} required style={inputStyle} placeholder="e.g. UGR/12345/15" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Email *</label>
+                  <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required style={inputStyle} placeholder="student@email.com" /></div>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Password</label>
+                  <input value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} style={inputStyle} placeholder="Default: Welcome123" /></div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Phone</label>
+                  <input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} style={inputStyle} placeholder="+251..." /></div>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Major</label>
+                  <input value={formData.major} onChange={e => setFormData({ ...formData, major: e.target.value })} style={inputStyle} placeholder="e.g. CS" /></div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Year</label>
+                  <select value={formData.year} onChange={e => setFormData({ ...formData, year: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    {[1,2,3,4,5].map(y => <option key={y} value={y}>{y}</option>)}
+                  </select></div>
+                <div><label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '5px' }}>Gender</label>
+                  <select value={formData.gender} onChange={e => setFormData({ ...formData, gender: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    <option value="">Select</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select></div>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" onClick={() => setShowAddModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: '10px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ flex: 2, padding: '12px', background: 'linear-gradient(135deg, #5B5CE2, #7C3AED)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>Add Student</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {showDeleteModal && selectedStudent && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(3px)', padding: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '20px', padding: '28px', width: '400px', maxWidth: '100%', textAlign: 'center' }}>
+            <div style={{ fontSize: '52px', marginBottom: '12px' }}>🗑️</div>
+            <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#1a1a2e', marginBottom: '8px' }}>Delete Student?</h3>
+            <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px' }}>
+              This will permanently delete <strong>{selectedStudent.first_name} {selectedStudent.last_name}</strong> and all their data.
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={() => setShowDeleteModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: '10px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleDelete} style={{ flex: 1, padding: '12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Modal */}
+      {showPwdModal && selectedStudent && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(3px)', padding: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '20px', padding: '28px', width: '400px', maxWidth: '100%' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#1a1a2e', marginBottom: '6px' }}>🔐 Reset Password</h3>
+            <p style={{ color: '#6b7280', marginBottom: '20px', fontSize: '14px' }}>For: <strong>{selectedStudent.first_name} {selectedStudent.last_name}</strong></p>
+            <form onSubmit={handleChangePwd}>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>New Password *</label>
+                <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} required minLength={6} style={inputStyle} placeholder="Min. 6 characters" />
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" onClick={() => { setShowPwdModal(false); setNewPwd(''); }} style={{ flex: 1, padding: '11px', background: '#f3f4f6', border: 'none', borderRadius: '10px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg, #5B5CE2, #7C3AED)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}>Update</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };

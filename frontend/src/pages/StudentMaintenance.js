@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -28,7 +27,7 @@ const StudentMaintenance = () => {
       const response = await api.get('/student/maintenance', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setRequests(response.data.requests);
+      setRequests(response.requests || []);
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -42,7 +41,7 @@ const StudentMaintenance = () => {
       const response = await api.get('/rooms', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setRooms(response.data.rooms);
+      setRooms(response.rooms || []);
     } catch (error) {
       console.error('Error:', error);
     }

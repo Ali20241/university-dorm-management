@@ -1,7 +1,6 @@
 import api from '../services/api';
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');
@@ -17,7 +16,7 @@ const ForgotPassword = () => {
     try {
       const response = await api.post('/auth/forgot-password', { email });
       setSubmitted(true);
-      setMessage({ type: 'success', text: response.data.message });
+      setMessage({ type: 'success', text: response.message });
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Something went wrong' });
     } finally {

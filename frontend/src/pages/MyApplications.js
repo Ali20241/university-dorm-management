@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
@@ -18,7 +17,7 @@ const MyApplications = () => {
       const response = await api.get('/student/applications', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setApplications(response.data.applications);
+      setApplications(response.applications || []);
     } catch (error) {
       console.error('Error:', error);
     } finally {

@@ -1,6 +1,5 @@
 import api from '../services/api';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import { useLanguage } from '../context/LanguageContext';
@@ -20,7 +19,7 @@ const StudentNotifications = () => {
       const response = await api.get('/student/penalties', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setPenalties(response.data.penalties);
+      setPenalties(response.penalties || []);
     } catch (error) {
       console.error('Error:', error);
     } finally {

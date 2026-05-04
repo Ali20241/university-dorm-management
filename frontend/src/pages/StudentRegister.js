@@ -1,7 +1,6 @@
 import api from '../services/api';
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
 
 const StudentRegister = () => {
   const navigate = useNavigate();
@@ -52,8 +51,8 @@ const StudentRegister = () => {
       });
       
       // Save token and redirect
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
+      localStorage.setItem('token', response.token);
+      localStorage.setItem('user', JSON.stringify(response.user));
       navigate('/student/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed');

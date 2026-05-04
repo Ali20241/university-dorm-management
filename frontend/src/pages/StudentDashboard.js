@@ -2,7 +2,6 @@ import api from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
-import { studentAPI } from '../services/api';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import '../styles/Dashboard.css';
@@ -23,24 +22,16 @@ const StudentDashboard = () => {
         const userData = JSON.parse(localStorage.getItem('user') || '{}');
         setStudentInfo(userData);
         
-        if (user?.id) {
+        if (user?.id || localStorage.getItem('token')) {
           try {
-            const [assignmentRes, paymentsRes] = await Promise.all([
-              studentAPI.getAssignment(user.id),
-              studentAPI.getPayments(user.id),
-            ]);
-            setAssignment(assignmentRes.assignment);
-            setPayments(paymentsRes.payments || []);
-            
-            // Fetch penalties
             const token = localStorage.getItem('token');
-            const penaltiesRes = await api.get('/student/penalties', {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            const penaltiesData = await penaltiesRes.json();
-            if (penaltiesData.success) {
-              setPenalties(penaltiesData.penalties);
-            }
+            const headers = { Authorization: `Bearer ${token}` };
+            const [assignmentRes, penaltiesRes] = await Promise.all([
+              api.get('/student/assignment/details', { headers }),
+              api.get('/student/penalties', { headers }),
+            ]);
+            if (assignmentRes.success) setAssignment(assignmentRes.assignment);
+            setPenalties(penaltiesRes.penalties || []);
           } catch (err) {
             console.log('No data yet');
           }
